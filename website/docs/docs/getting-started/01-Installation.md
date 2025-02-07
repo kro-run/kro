@@ -13,6 +13,7 @@ Before you begin, ensure you have the following:
 
 1. `Helm` 3.x installed
 2. `kubectl` installed and configured to interact with your Kubernetes cluster
+3. Login to ghcr.io
 
 ## Installation Steps
 
