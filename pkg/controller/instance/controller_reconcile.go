@@ -142,9 +142,9 @@ func (igr *instanceGraphReconciler) reconcileResource(ctx context.Context, resou
 	resourceState := &ResourceState{State: "IN_PROGRESS"}
 	igr.state.ResourceStates[resourceID] = resourceState
 
-	// Check if resource should be created
-	if want, err := igr.runtime.WantToCreateResource(resourceID); err != nil || !want {
-		log.V(1).Info("Skipping resource creation", "reason", err)
+	// Check if resource should be processed (create or get)
+	if want, err := igr.runtime.ReadyToProcessResource(resourceID); err != nil || !want {
+		log.V(1).Info("Skipping resource processing", "reason", err)
 		resourceState.State = "SKIPPED"
 		igr.runtime.IgnoreResource(resourceID)
 		return nil
@@ -177,6 +177,12 @@ func (igr *instanceGraphReconciler) handleResourceReconciliation(
 	observed, err := rc.Get(ctx, resource.GetName(), metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
+			// For read-only resources, we don't create
+			if igr.runtime.ResourceDescriptor(resourceID).IsReadOnly() {
+				resourceState.State = "WAITING_FOR_READONLY"
+				resourceState.Err = fmt.Errorf("read-only resource not found: %w", err)
+				return igr.delayedRequeue(resourceState.Err)
+			}
 			return igr.handleResourceCreation(ctx, rc, resource, resourceID, resourceState)
 		}
 		resourceState.State = "ERROR"
@@ -196,6 +202,12 @@ func (igr *instanceGraphReconciler) handleResourceReconciliation(
 	}
 
 	resourceState.State = "SYNCED"
+
+	// For read-only resources, don't perform updates
+	if igr.runtime.ResourceDescriptor(resourceID).IsReadOnly() {
+		return nil
+	}
+
 	return igr.updateResource(ctx, rc, resource, observed, resourceID, resourceState)
 }
 
@@ -351,6 +363,12 @@ func (igr *instanceGraphReconciler) deleteResourcesInOrder(ctx context.Context) 
 		resourceState := igr.state.ResourceStates[resourceID]
 
 		if resourceState == nil || resourceState.State != "PENDING_DELETION" {
+			continue
+		}
+
+		// Skip deletion for read-only resources
+		if igr.runtime.ResourceDescriptor(resourceID).IsReadOnly() {
+			igr.state.ResourceStates[resourceID].State = "SKIPPED"
 			continue
 		}
 
