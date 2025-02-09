@@ -1,3 +1,4 @@
+RELEASE_VERSION ?= dev-$(shell git rev-parse --short HEAD)
 OCI_REPO ?= ghcr.io/kro-run/kro
 
 HELM_IMAGE ?= ${OCI_REPO}
@@ -269,3 +270,8 @@ cli:
 	go build -o bin/kro cmd/cli/main.go
 	sudo mv bin/kro /usr/local/bin
 	@echo "CLI built successfully"
+
+# Run e2e tests
+.PHONY: test-e2e
+test-e2e: ## Run e2e tests
+	go test -v ./test/e2e/...
