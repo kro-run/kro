@@ -275,3 +275,7 @@ cli:
 .PHONY: test-e2e
 test-e2e: ## Run e2e tests
 	go test -v ./test/e2e/...
+
+.PHONY: test-e2e-kind
+test-e2e-kind: deploy-kind
+	go test -v ./test/e2e/...

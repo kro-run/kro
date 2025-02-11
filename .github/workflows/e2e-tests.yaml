@@ -23,8 +23,8 @@ jobs:
     - name: Install kind
       run: go install sigs.k8s.io/kind@latest
 
-    #- name: Build and deploy to kind cluster
-    #  run: make deploy-kind
+    - name: Build and deploy to kind cluster
+      run: make deploy-kind
 
-    #- name: Run e2e tests
-    #  run: make test-e2e 
+    - name: Run e2e tests
+      run: make test-e2e 
