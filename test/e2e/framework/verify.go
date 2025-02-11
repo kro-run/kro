@@ -57,46 +57,47 @@ func (tc *TestCase) VerifyOutputsWithTimeout(ctx context.Context, timeout time.D
 		tc.t.Logf("      Verifying %s", res.String())
 		found := false
 		var compareError error
-		err := wait.PollImmediate(DefaultWaitInterval, remainingTime, func() (bool, error) {
-			// Get the resource
-			err := tc.Framework.Client.Get(ctx, types.NamespacedName{
-				Name:      expected.GetName(),
-				Namespace: expected.GetNamespace(),
-			}, actual)
-			if err != nil {
-				if errors.IsNotFound(err) {
-					return false, nil
+		err := wait.PollUntilContextTimeout(ctx, DefaultWaitInterval, remainingTime, true,
+			func(ctx context.Context) (bool, error) {
+				// Get the resource
+				err := tc.Framework.Client.Get(ctx, types.NamespacedName{
+					Name:      expected.GetName(),
+					Namespace: expected.GetNamespace(),
+				}, actual)
+				if err != nil {
+					if errors.IsNotFound(err) {
+						return false, nil
+					}
+					return false, err
 				}
-				return false, err
-			}
-			found = true
+				found = true
 
-			// Compare metadata if set in expected
-			if _, hasMetadata, _ := unstructured.NestedMap(expected.Object, "metadata"); hasMetadata {
-				if err := CompareMetadata(expected, actual); err != nil {
-					compareError = fmt.Errorf("metadata mismatch: %w", err)
-					return false, nil
+				// Compare metadata if set in expected
+				if _, hasMetadata, _ := unstructured.NestedMap(expected.Object, "metadata"); hasMetadata {
+					if err := CompareMetadata(expected, actual); err != nil {
+						compareError = fmt.Errorf("metadata mismatch: %w", err)
+						return false, nil
+					}
 				}
-			}
 
-			// Compare spec if set in expected
-			if _, hasSpec, _ := unstructured.NestedMap(expected.Object, "spec"); hasSpec {
-				if err := CompareSpecs(expected, actual); err != nil {
-					compareError = fmt.Errorf("spec mismatch: %w", err)
-					return false, nil
+				// Compare spec if set in expected
+				if _, hasSpec, _ := unstructured.NestedMap(expected.Object, "spec"); hasSpec {
+					if err := CompareSpecs(expected, actual); err != nil {
+						compareError = fmt.Errorf("spec mismatch: %w", err)
+						return false, nil
+					}
 				}
-			}
 
-			// Compare status if set in expected
-			if _, hasStatus, _ := unstructured.NestedMap(expected.Object, "status"); hasStatus {
-				if err := CompareStatus(expected, actual); err != nil {
-					compareError = fmt.Errorf("status mismatch: %w", err)
-					return false, nil
+				// Compare status if set in expected
+				if _, hasStatus, _ := unstructured.NestedMap(expected.Object, "status"); hasStatus {
+					if err := CompareStatus(expected, actual); err != nil {
+						compareError = fmt.Errorf("status mismatch: %w", err)
+						return false, nil
+					}
 				}
-			}
 
-			return true, nil
-		})
+				return true, nil
+			})
 		if err != nil {
 			if !found {
 				return fmt.Errorf("resource %s/%s not found",
@@ -119,22 +120,23 @@ func (tc *TestCase) VerifyOutputs(ctx context.Context) error {
 // WaitForResource waits for a resource to exist and match the given condition
 func (tc *TestCase) WaitForResource(ctx context.Context, gvk schema.GroupVersionKind,
 	name, namespace string, condition func(*unstructured.Unstructured) bool) error {
-	return wait.PollImmediate(DefaultWaitInterval, DefaultWaitTimeout, func() (bool, error) {
-		obj := &unstructured.Unstructured{}
-		obj.SetGroupVersionKind(gvk)
-		err := tc.Framework.Client.Get(ctx, types.NamespacedName{
-			Name:      name,
-			Namespace: namespace,
-		}, obj)
-		if err != nil {
-			if errors.IsNotFound(err) {
-				return false, nil
+	return wait.PollUntilContextTimeout(ctx, DefaultWaitInterval, DefaultWaitTimeout, true,
+		func(ctx context.Context) (bool, error) {
+			obj := &unstructured.Unstructured{}
+			obj.SetGroupVersionKind(gvk)
+			err := tc.Framework.Client.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, obj)
+			if err != nil {
+				if errors.IsNotFound(err) {
+					return false, nil
+				}
+				return false, err
 			}
-			return false, err
-		}
 
-		return condition(obj), nil
-	})
+			return condition(obj), nil
+		})
 }
 
 // WaitForResourceGraphDefinitionActive waits for a ResourceGraphDefinition to be present and in Active state
