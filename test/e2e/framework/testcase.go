@@ -84,7 +84,7 @@ func NewTestCase(t *testing.T, f *Framework, name string) (*TestCase, error) {
 	t.Helper()
 
 	// Enable parallel test execution
-	t.Parallel()
+	//t.Parallel()
 
 	// Create test case
 	tc := &TestCase{
