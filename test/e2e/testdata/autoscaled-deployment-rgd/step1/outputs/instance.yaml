@@ -5,7 +5,6 @@ metadata:
   - kro.run/finalizer
   generation: 1
   labels:
-    kro.run/controller-pod-id: kro-pod
     kro.run/owned: "true"
     kro.run/resource-graph-definition-name: autoscaled-deployment-rgd
   name: test-app-instance
