@@ -1,22 +1,20 @@
 apiVersion: kro.run/v1alpha1
-kind: DeploymentWithSecret
+kind: SimpleDeployment
 metadata:
   finalizers:
   - kro.run/finalizer
-  generation: 1
+  generation: 2
   labels:
     kro.run/controller-pod-id: kro-pod
     kro.run/owned: "true"
   name: test-instance
 spec:
   image: nginx:1.25
-  replicas: 2
-  tokenID: sometokenid
-  tokenSecret: kq4gihvszzgn1p0r
+  replicas: 3
 status:
   conditions:
   - message: Instance reconciled successfully
-    observedGeneration: 1
+    observedGeneration: 2
     reason: ReconciliationSucceeded
     status: "True"
     type: InstanceSynced

@@ -38,6 +38,7 @@ spec:
             metadata:
               labels:
                 app: ${schema.metadata.name}
+                secret-version: ${secret.metadata.resourceVersion}
             spec:
               containers:
                 - name: main
