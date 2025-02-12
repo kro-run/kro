@@ -100,11 +100,6 @@ func cleanMetadata(obj *unstructured.Unstructured) {
 //
 // Records a Difference if values don't match or are of different types.
 func walkCompare(desired, observed interface{}, path string, differences *[]Difference) {
-	// Special case: treat empty array and nil as equivalent
-	if isEmptyArrayOrNil(desired) && isEmptyArrayOrNil(observed) {
-		return
-	}
-
 	switch d := desired.(type) {
 	case map[string]interface{}:
 		e, ok := observed.(map[string]interface{})
@@ -118,13 +113,19 @@ func walkCompare(desired, observed interface{}, path string, differences *[]Diff
 		}
 		walkMap(d, e, path, differences)
 
+	case nil:
+		// Special case: treat empty array and nil as equivalent
+		if isEmptyArrayOrNil(desired) && isEmptyArrayOrNil(observed) {
+			return
+		}
+
 	case []interface{}:
+		// Special case: if desired is empty array and observed is nil, treat as equal
+		if isEmptyArrayOrNil(desired) && isEmptyArrayOrNil(observed) {
+			return
+		}
 		e, ok := observed.([]interface{})
 		if !ok {
-			// Special case: if desired is empty array and observed is nil, treat as equal
-			if len(d) == 0 && observed == nil {
-				return
-			}
 			*differences = append(*differences, Difference{
 				Path:     path,
 				Observed: observed,
@@ -168,7 +169,7 @@ func walkMap(desired, observed map[string]interface{}, path string, differences 
 		}
 
 		observedVal, exists := observed[k]
-		if !exists && desiredVal != nil {
+		if !exists && !isEmptyArrayOrNil(desiredVal) {
 			*differences = append(*differences, Difference{
 				Path:     newPath,
 				Observed: nil,
