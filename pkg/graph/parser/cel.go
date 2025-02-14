@@ -49,19 +49,23 @@ func extractExpressions(str string) ([]string, error) {
 		// consider the outermost expression
 		bracketCount := 1
 		endIdx := startIdx + len(exprStart)
+
 		for endIdx < len(str) {
 			if str[endIdx] == '{' {
 				bracketCount++
 			} else if str[endIdx] == '}' {
 				bracketCount--
-				// If we have reached the end of the expression, break
 				if bracketCount == 0 {
 					break
 				}
 			} else if endIdx+1 < len(str) && str[endIdx:endIdx+2] == "${" {
-				// We do not allow nested expressions. I'm not sure if this is a
-				// good idea, but its sounds like a reasonable restriction.
-				return nil, ErrNestedExpression
+				// Allow nested expressions, but only if they are escaped with quotes, CEL will
+				// treat them as a string literal
+				if str[endIdx-1] != '"' {
+					// We do not allow nested expressions. I'm not sure if this is a
+					// good idea, but its sounds like a reasonable restriction.
+					return nil, ErrNestedExpression
+				}
 			}
 			endIdx++
 		}
