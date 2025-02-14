@@ -69,7 +69,7 @@ func TestNewDynamicController(t *testing.T) {
 
 	assert.NotNil(t, dc)
 	assert.Equal(t, config, dc.config)
-	assert.NotNil(t, dc.queue)
+	assert.NotNil(t, dc.weightedQueues[100])
 	assert.NotNil(t, dc.kubeClient)
 }
 
@@ -136,5 +136,5 @@ func TestEnqueueObject(t *testing.T) {
 
 	dc.enqueueObject(obj, "add")
 
-	assert.Equal(t, 1, dc.queue.Len())
+	assert.Equal(t, 1, dc.weightedQueues[100].queue.Len())
 }
