@@ -98,6 +98,24 @@ type Config struct {
 	ShutdownTimeout time.Duration
 }
 
+// WeightedQueue represents a queue with an associated weight and set of GVRs
+type WeightedQueue struct {
+	// weight determines the priority of this queue (1-1000).
+	// Higher weights receive proportionally more worker threads.
+	// For example, a queue with weight 200 gets twice as many workers
+	// as a queue with weight 100.
+	weight int
+
+	// queue is the actual work queue that holds ObjectIdentifiers
+	// waiting to be processed. It implements rate limiting to prevent
+	// overwhelming the system during retries.
+	queue workqueue.RateLimitingInterface
+
+	// gvrSet tracks which GroupVersionResources are assigned to this
+	// weighted queue. 
+	gvrSet map[schema.GroupVersionResource]struct{}
+}
+
 // DynamicController (DC) is a single controller capable of managing multiple different
 // kubernetes resources (GVRs) in parallel. It can safely start watching new
 // resources and stop watching others at runtime - hence the term "dynamic". This
@@ -122,8 +140,18 @@ type DynamicController struct {
 	// handler is responsible for managing a specific GVR.
 	handlers sync.Map
 
-	// queue is the workqueue used to process items
-	queue workqueue.RateLimitingInterface
+	// weightedQueues maps weight values to their corresponding WeightedQueue.
+	// Each weight has its own queue and set of GVRs.
+	// Higher weights receive proportionally more worker threads.
+	weightedQueues map[int]*WeightedQueue
+
+	// gvrWeights maps each GVR to its assigned weight value. This determines
+	// which weighted queue will process events for that GVR. Default weight
+	// is 100 if not explicitly set.
+	gvrWeights map[schema.GroupVersionResource]int
+
+	// queueMu protects concurrent access to weightedQueues and gvrWeights
+	queueMu sync.RWMutex
 
 	log logr.Logger
 }
@@ -144,16 +172,15 @@ func NewDynamicController(
 	logger := log.WithName("dynamic-controller")
 
 	dc := &DynamicController{
-		config:     config,
-		kubeClient: kubeClient,
-		// TODO(a-hilaly): Make the queue size configurable.
-		queue: workqueue.NewNamedRateLimitingQueue(workqueue.NewMaxOfRateLimiter(
-			workqueue.NewItemExponentialFailureRateLimiter(200*time.Millisecond, 1000*time.Second),
-			&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
-		), "dynamic-controller-queue"),
-		log: logger,
-		// pass version and pod id from env
+		config:         config,
+		kubeClient:     kubeClient,
+		weightedQueues: make(map[int]*WeightedQueue),
+		gvrWeights:     make(map[schema.GroupVersionResource]int),
+		log:            logger,
 	}
+
+	// Create default queue with weight 100
+	dc.ensureWeightedQueue(100)
 
 	return dc
 }
@@ -203,21 +230,22 @@ func (dc *DynamicController) WaitForInformersSync(stopCh <-chan struct{}) bool {
 // Run starts the DynamicController.
 func (dc *DynamicController) Run(ctx context.Context) error {
 	defer utilruntime.HandleCrash()
-	defer dc.queue.ShutDown()
 
 	dc.log.Info("Starting dynamic controller")
 	defer dc.log.Info("Shutting down dynamic controller")
 
-	// Wait for all informers to sync
 	if !dc.WaitForInformersSync(ctx.Done()) {
 		return fmt.Errorf("failed to sync informers")
 	}
 
-	// Spin up workers.
-	//
-	// TODO(a-hilaly): Allow for dynamic scaling of workers.
-	for i := 0; i < dc.config.Workers; i++ {
-		go wait.UntilWithContext(ctx, dc.worker, time.Second)
+	// Start workers for each weighted queue
+	for weight, wq := range dc.weightedQueues {
+		workerCount := dc.calculateWorkersForWeight(weight)
+		for i := 0; i < workerCount; i++ {
+			go wait.UntilWithContext(ctx, func(ctx context.Context) {
+				dc.worker(ctx, wq.queue)
+			}, time.Second)
+		}
 	}
 
 	<-ctx.Done()
@@ -225,31 +253,31 @@ func (dc *DynamicController) Run(ctx context.Context) error {
 }
 
 // worker processes items from the queue.
-func (dc *DynamicController) worker(ctx context.Context) {
-	for dc.processNextWorkItem(ctx) {
+func (dc *DynamicController) worker(ctx context.Context, queue workqueue.RateLimitingInterface) {
+	for dc.processNextWorkItem(ctx, queue) {
 	}
 }
 
 // processNextWorkItem processes a single item from the queue.
-func (dc *DynamicController) processNextWorkItem(ctx context.Context) bool {
-	obj, shutdown := dc.queue.Get()
+func (dc *DynamicController) processNextWorkItem(ctx context.Context, queue workqueue.RateLimitingInterface) bool {
+	obj, shutdown := queue.Get()
 	if shutdown {
 		return false
 	}
-	defer dc.queue.Done(obj)
+	defer queue.Done(obj)
 
-	queueLength.Set(float64(dc.queue.Len()))
+	queueLength.Set(float64(queue.Len()))
 
 	item, ok := obj.(ObjectIdentifiers)
 	if !ok {
 		dc.log.Error(fmt.Errorf("expected ObjectIdentifiers in queue but got %#v", obj), "Invalid item in queue")
-		dc.queue.Forget(obj)
+		queue.Forget(obj)
 		return true
 	}
 
 	err := dc.syncFunc(ctx, item)
 	if err == nil || apierrors.IsNotFound(err) {
-		dc.queue.Forget(obj)
+		queue.Forget(obj)
 		return true
 	}
 
@@ -260,25 +288,25 @@ func (dc *DynamicController) processNextWorkItem(ctx context.Context) bool {
 	case *requeue.NoRequeue:
 		dc.log.Error(typedErr, "Error syncing item, not requeuing", "item", item)
 		requeueTotal.WithLabelValues(gvrKey, "no_requeue").Inc()
-		dc.queue.Forget(obj)
+		queue.Forget(obj)
 	case *requeue.RequeueNeeded:
 		dc.log.V(1).Info("Requeue needed", "item", item, "error", typedErr)
 		requeueTotal.WithLabelValues(gvrKey, "requeue").Inc()
-		dc.queue.Add(obj) // Add without rate limiting
+		queue.Add(obj) // Add without rate limiting
 	case *requeue.RequeueNeededAfter:
 		dc.log.V(1).Info("Requeue needed after delay", "item", item, "error", typedErr, "delay", typedErr.Duration())
 		requeueTotal.WithLabelValues(gvrKey, "requeue_after").Inc()
-		dc.queue.AddAfter(obj, typedErr.Duration())
+		queue.AddAfter(obj, typedErr.Duration())
 	default:
 		// Arriving here means we have an unexpected error, we should requeue the item
 		// with rate limiting.
 		requeueTotal.WithLabelValues(gvrKey, "rate_limited").Inc()
-		if dc.queue.NumRequeues(obj) < dc.config.QueueMaxRetries {
+		if queue.NumRequeues(obj) < dc.config.QueueMaxRetries {
 			dc.log.Error(err, "Error syncing item, requeuing with rate limit", "item", item)
-			dc.queue.AddRateLimited(obj)
+			queue.AddRateLimited(obj)
 		} else {
 			dc.log.Error(err, "Dropping item from queue after max retries", "item", item)
-			dc.queue.Forget(obj)
+			queue.Forget(obj)
 		}
 	}
 
@@ -418,7 +446,10 @@ func (dc *DynamicController) enqueueObject(obj interface{}, eventType string) {
 		"eventType", eventType)
 
 	informerEventsTotal.WithLabelValues(gvr.String(), eventType).Inc()
-	dc.queue.Add(objectIdentifiers)
+	// Get the appropriate queue based on the GVR's weight
+    // Each GVR can be assigned different weights for priority processing
+	queue := dc.getQueueForGVR(objectIdentifiers.GVR)
+	queue.Add(objectIdentifiers)
 }
 
 // StartServingGVK registers a new GVK to the informers map safely.
@@ -529,4 +560,86 @@ func (dc *DynamicController) StopServiceGVK(ctx context.Context, gvr schema.Grou
 	// isStopped := wrapper.informer.ForResource(gvr).Informer().IsStopped()
 	dc.log.V(1).Info("Successfully unregistered GVK", "gvr", gvr)
 	return nil
+}
+
+// ensureWeightedQueue creates a new weighted queue if it doesn't exist for the given weight.
+func (dc *DynamicController) ensureWeightedQueue(weight int) *WeightedQueue {
+	dc.queueMu.Lock()
+	defer dc.queueMu.Unlock()
+
+	if wq, exists := dc.weightedQueues[weight]; exists {
+		return wq
+	}
+
+	wq := &WeightedQueue{
+		weight: weight,
+		queue: workqueue.NewNamedRateLimitingQueue(
+			workqueue.NewMaxOfRateLimiter(
+				workqueue.NewItemExponentialFailureRateLimiter(200*time.Millisecond, 1000*time.Second),
+				&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
+			),
+			fmt.Sprintf("weight-%d-queue", weight),
+		),
+		gvrSet: make(map[schema.GroupVersionResource]struct{}),
+	}
+
+	dc.weightedQueues[weight] = wq
+	return wq
+}
+
+// getQueueForGVR returns the appropriate workqueue for a given GroupVersionResource.
+func (dc *DynamicController) getQueueForGVR(gvr schema.GroupVersionResource) workqueue.RateLimitingInterface {
+	dc.queueMu.RLock()
+	weight, exists := dc.gvrWeights[gvr]
+	dc.queueMu.RUnlock()
+
+	if !exists {
+		weight = 100 // default weight
+	}
+
+	wq := dc.ensureWeightedQueue(weight)
+	return wq.queue
+}
+
+// SetGVRWeight sets the weight for a specific GVR
+func (dc *DynamicController) SetGVRWeight(gvr schema.GroupVersionResource, weight int) {
+	if weight < 1 {
+		weight = 1
+	} else if weight > 1000 {
+		weight = 1000
+	}
+
+	dc.queueMu.Lock()
+	defer dc.queueMu.Unlock()
+
+	// Remove GVR from old weighted queue
+	if oldWeight, exists := dc.gvrWeights[gvr]; exists {
+		if oldQueue, ok := dc.weightedQueues[oldWeight]; ok {
+			delete(oldQueue.gvrSet, gvr)
+			// Clean up empty queues except default
+			if len(oldQueue.gvrSet) == 0 && oldWeight != 100 {
+				oldQueue.queue.ShutDown()
+				delete(dc.weightedQueues, oldWeight)
+			}
+		}
+	}
+
+	// Add GVR to new weighted queue
+	wq := dc.ensureWeightedQueue(weight)
+	wq.gvrSet[gvr] = struct{}{}
+	dc.gvrWeights[gvr] = weight
+}
+
+// calculateWorkersForWeight determines how many workers to assign to a queue based on its weight
+func (dc *DynamicController) calculateWorkersForWeight(weight int) int {
+	// Simple calculation: higher weights get proportionally more workers
+	// Minimum of 1 worker, maximum of config.Workers/2
+	workers := (weight * dc.config.Workers) / 1000
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > dc.config.Workers/2 {
+		workers = dc.config.Workers / 2
+	}
+	return workers
 }
