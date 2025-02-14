@@ -1,4 +1,3 @@
-
 RELEASE_VERSION ?= dev-$(shell git rev-parse --short HEAD)
 OCI_REPO ?= ghcr.io/kro-run/kro
 
@@ -239,3 +238,13 @@ deploy-kind:
 	helm template kro ./helm --namespace kro-system --set image.pullPolicy=Never --set image.ko=true | $(KO) apply -f -
 	kubectl wait --for=condition=ready --timeout=1m pod -n kro-system -l app.kubernetes.io/component=controller
 	$(KUBECTL) --context kind-${KIND_CLUSTER_NAME} get pods -A
+
+
+# Run e2e tests
+.PHONY: test-e2e
+test-e2e: ## Run e2e tests
+	go test -v ./test/e2e/suites/basic/...
+
+.PHONY: test-e2e-kind
+test-e2e-kind: deploy-kind
+	make test-e2e
