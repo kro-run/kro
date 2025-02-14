@@ -2228,7 +2228,11 @@ func Test_IsResourceReady(t *testing.T) {
 		{
 			name: "multiple expressions all true",
 			resource: newTestResource(
-				withReadyExpressions([]string{"test.status.ready", "test.status.healthy && test.status.count > 10", "test.status.count > 5"}),
+				withReadyExpressions([]string{
+					"test.status.ready",
+					"test.status.healthy && test.status.count > 10",
+					"test.status.count > 5",
+				}),
 			),
 			resolvedObject: map[string]interface{}{
 				"status": map[string]interface{}{
@@ -2280,7 +2284,7 @@ func Test_IsResourceReady(t *testing.T) {
 		})
 	}
 }
-func Test_WantToCreateResource(t *testing.T) {
+func Test_ReadyToProcessResource(t *testing.T) {
 	tests := []struct {
 		name         string
 		resource     Resource
@@ -2368,25 +2372,25 @@ func Test_WantToCreateResource(t *testing.T) {
 				},
 			}
 
-			got, err := rt.WantToCreateResource("test")
+			got, err := rt.ReadyToProcessResource("test")
 			if tt.wantErr {
 				if err == nil {
-					t.Error("WantToCreateResource() expected error, got none")
+					t.Error("ReadyToProcessResource() expected error, got none")
 				}
 				return
 			}
 			if tt.wantSkip {
 				if err == nil || !strings.Contains(err.Error(), "Skipping resource creation due to condition") {
-					t.Errorf("WantToCreateResource() expected skip message, got %v", err)
+					t.Errorf("ReadyToProcessResource() expected skip message, got %v", err)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("WantToCreateResource() unexpected error = %v", err)
+				t.Errorf("ReadyToProcessResource() unexpected error = %v", err)
 				return
 			}
 			if got != tt.want {
-				t.Errorf("WantToCreateResource() = %v, want %v", got, tt.want)
+				t.Errorf("ReadyToProcessResource() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -2613,6 +2617,7 @@ type mockResource struct {
 	conditions       []string
 	topLevelFields   []string
 	namespaced       bool
+	readOnly         bool
 	obj              *unstructured.Unstructured
 }
 
@@ -2656,6 +2661,10 @@ func (m *mockResource) Unstructured() *unstructured.Unstructured {
 	return m.obj
 }
 
+func (m *mockResource) IsReadOnly() bool {
+	return m.readOnly
+}
+
 type mockResourceOption func(*mockResource)
 
 /* func withGVR(group, version, resource string) mockResourceOption {
@@ -2685,6 +2694,14 @@ func withReadyExpressions(exprs []string) mockResourceOption {
 		m.readyExpressions = exprs
 	}
 }
+
+/*
+func withReadOnly(ro bool) mockResourceOption {
+	return func(m *mockResource) {
+		m.readOnly = ro
+	}
+}
+*/
 
 func withConditions(conditions []string) mockResourceOption {
 	return func(m *mockResource) {
