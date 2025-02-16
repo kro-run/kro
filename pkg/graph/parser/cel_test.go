@@ -115,6 +115,12 @@ func TestExtractExpressions(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "Nested expression but with quotes",
+			input:   "${outer(\"${inner}\")}",
+			want:    []string{"outer(\"${inner}\")"},
+			wantErr: false,
+		},
+		{
 			name:    "Expressions with dictionary building",
 			input:   "${true ? {'key': 'value'} : {'key': 'value2'}}",
 			want:    []string{"true ? {'key': 'value'} : {'key': 'value2'}"},
@@ -197,6 +203,7 @@ func TestIsOneShotExpression(t *testing.T) {
 		{"With newlines", "${resource.list.map(\n  x,\n  x * 2\n)}", true, false},
 		{"Complex expression", "${resource.list.map(x, x.field).filter(y, y > 5)}", true, false},
 		{"Nested expression (should error)", "${outer(${inner})}", false, true},
+		{"Nested expression but with quotes", "${outer(\"${inner}\")}", true, false},
 	}
 
 	for _, tt := range tests {
