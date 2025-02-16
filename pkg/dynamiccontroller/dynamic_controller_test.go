@@ -69,7 +69,8 @@ func TestNewDynamicController(t *testing.T) {
 
 	assert.NotNil(t, dc)
 	assert.Equal(t, config, dc.config)
-	assert.NotNil(t, dc.queue)
+	assert.NotNil(t, dc.weightedQueues)
+	assert.NotNil(t, dc.weightedQueues[defaultQueueWeight].queue)
 	assert.NotNil(t, dc.kubeClient)
 }
 
@@ -104,14 +105,14 @@ func TestRegisterAndUnregisterGVK(t *testing.T) {
 	})
 
 	// Register GVK
-	err := dc.StartServingGVK(context.Background(), gvr, handlerFunc)
+	err := dc.StartServingGVK(context.Background(), gvr, handlerFunc, defaultQueueWeight)
 	require.NoError(t, err)
 
 	_, exists := dc.informers.Load(gvr)
 	assert.True(t, exists)
 
 	// Try to register again (should not fail)
-	err = dc.StartServingGVK(context.Background(), gvr, handlerFunc)
+	err = dc.StartServingGVK(context.Background(), gvr, handlerFunc, defaultQueueWeight)
 	assert.NoError(t, err)
 
 	// Unregister GVK
@@ -132,9 +133,10 @@ func TestEnqueueObject(t *testing.T) {
 	obj := &unstructured.Unstructured{}
 	obj.SetName("test-object")
 	obj.SetNamespace("default")
-	obj.SetGroupVersionKind(schema.GroupVersionKind{Group: "test", Version: "v1", Kind: "Test"})
+	err := unstructured.SetNestedField(obj.Object, int64(defaultQueueWeight), "spec", "weight")
+	require.NoError(t, err)
 
 	dc.enqueueObject(obj, "add")
 
-	assert.Equal(t, 1, dc.queue.Len())
+	assert.Equal(t, 1, dc.weightedQueues[defaultQueueWeight].queue.Len())
 }
