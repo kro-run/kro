@@ -35,6 +35,7 @@ type Difference struct {
 // their differences. It performs a deep comparison while being aware of Kubernetes
 // metadata specifics. The comparison:
 //
+// - Applies type-specific transformations to match server-side representation
 // - Cleans metadata from both objects to avoid spurious differences
 // - Walks object trees in parallel to find actual value differences
 // - Builds path strings to precisely identify where differences occurs
@@ -43,6 +44,10 @@ func Compare(desired, observed *unstructured.Unstructured) ([]Difference, error)
 	desiredCopy := desired.DeepCopy()
 	observedCopy := observed.DeepCopy()
 
+	// Transform objects to match server-side representation
+	if err := TransformObjectToServerSideRepresentation(desiredCopy); err != nil {
+		return nil, fmt.Errorf("failed to transform desired object: %w", err)
+	}
 	cleanMetadata(desiredCopy)
 	cleanMetadata(observedCopy)
 
