@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"github.com/kro-run/kro/api/v1alpha1"
+	"github.com/kro-run/kro/pkg"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -132,12 +133,10 @@ func NewInstanceLabeler(instanceMeta metav1.Object) GenericLabeler {
 
 // NewKroMetaLabeler returns a new labeler that sets the OwnedLabel,
 // KroVersion, and ControllerPodID labels on a resource.
-func NewKroMetaLabeler(
-	kroVersion string,
-) GenericLabeler {
+func NewKroMetaLabeler() GenericLabeler {
 	return map[string]string{
 		OwnedLabel:      "true",
-		KroVersionLabel: kroVersion,
+		KroVersionLabel: pkg.Version,
 	}
 }
 
