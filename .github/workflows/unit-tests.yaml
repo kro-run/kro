@@ -1,16 +1,24 @@
 name: unit tests
 on:
   push:
-    branches: [ main ]
+    branches: [main]
+    paths:
+      - "**.go"
+      - go.mod
+      - go.sum
   pull_request:
-    branches: [ main ]
+    branches: [main]
+    paths:
+      - "**.go"
+      - go.mod
+      - go.sum
 
 jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: [ '1.24' ]
+        go-version: ["1.24"]
 
     steps:
       - uses: actions/checkout@v3
