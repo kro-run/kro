@@ -61,9 +61,9 @@ type Interface interface {
 	// IsResourceReady returns true if the resource is ready, and false otherwise.
 	IsResourceReady(resourceID string) (bool, string, error)
 
-	// WantToCreateResource returns true if all the condition expressions return true
+	// ReadyToProcessResource returns true if all the condition expressions return true
 	// if not it will add itself to the ignored resources
-	WantToCreateResource(resourceID string) (bool, error)
+	ReadyToProcessResource(resourceID string) (bool, error)
 
 	// IgnoreResource ignores resource that has a condition expressison that evaluated
 	// to false
@@ -116,6 +116,10 @@ type ResourceDescriptor interface {
 	// IsNamespaced returns true if the resource is namespaced, and false if it's
 	// cluster-scoped.
 	IsNamespaced() bool
+
+	// IsReadOnly returns true if the resource is marked as read only
+	// This is used for external references
+	IsReadOnly() bool
 }
 
 // Resource extends `ResourceDescriptor` to include the actual resource data.
