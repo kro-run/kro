@@ -29,9 +29,8 @@ const (
 const (
 	NodeIDLabel = LabelKroPrefix + "node-id"
 
-	OwnedLabel           = LabelKroPrefix + "owned"
-	KroVersionLabel      = LabelKroPrefix + "kro-version"
-	ControllerPodIDLabel = LabelKroPrefix + "controller-pod-id"
+	OwnedLabel      = LabelKroPrefix + "owned"
+	KroVersionLabel = LabelKroPrefix + "kro-version"
 
 	InstanceIDLabel        = LabelKroPrefix + "instance-id"
 	InstanceLabel          = LabelKroPrefix + "instance-name"
@@ -115,8 +114,8 @@ func (gl GenericLabeler) Copy() map[string]string {
 // ResourceGraphDefinitionLabel and ResourceGraphDefinitionIDLabel labels on a resource.
 func NewResourceGraphDefinitionLabeler(rgMeta metav1.Object) GenericLabeler {
 	return map[string]string{
-		ResourceGraphDefinitionIDLabel:        string(rgMeta.GetUID()),
-		ResourceGraphDefinitionNameLabel:      rgMeta.GetName(),
+		ResourceGraphDefinitionIDLabel:   string(rgMeta.GetUID()),
+		ResourceGraphDefinitionNameLabel: rgMeta.GetName(),
 	}
 }
 
@@ -135,12 +134,10 @@ func NewInstanceLabeler(instanceMeta metav1.Object) GenericLabeler {
 // KroVersion, and ControllerPodID labels on a resource.
 func NewKroMetaLabeler(
 	kroVersion string,
-	controllerPodID string,
 ) GenericLabeler {
 	return map[string]string{
-		OwnedLabel:           "true",
-		KroVersionLabel:      kroVersion,
-		ControllerPodIDLabel: controllerPodID,
+		OwnedLabel:      "true",
+		KroVersionLabel: kroVersion,
 	}
 }
 
