@@ -340,6 +340,7 @@ func (b *Builder) buildRGResource(rgResource *v1alpha1.Resource, namespacedResou
 		includeWhenExpressions: includeWhen,
 		namespaced:             isNamespaced,
 		order:                  order,
+		readOnly:               rgResource.ReadOnly,
 	}, nil
 }
 
