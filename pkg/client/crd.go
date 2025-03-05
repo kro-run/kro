@@ -25,6 +25,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+
+	crdcompat "github.com/kro-run/kro/pkg/graph/crd/compat"
 )
 
 const (
@@ -92,27 +94,46 @@ func newCRDWrapper(cfg CRDWrapperConfig) *CRDWrapper {
 // Ensure ensures a CRD exists, up-to-date, and is ready. This can be
 // a dangerous operation as it will update the CRD if it already exists.
 //
-// The caller is responsible for ensuring the CRD, isn't introducing
-// breaking changes.
-func (w *CRDWrapper) Ensure(ctx context.Context, crd v1.CustomResourceDefinition) error {
-	_, err := w.Get(ctx, crd.Name)
+// If a CRD does exist, it will compare the existing CRD with the desired CRD
+// and update it if necessary. If the existing CRD has breaking changes, it
+// will return an error.
+func (w *CRDWrapper) Ensure(ctx context.Context, desired v1.CustomResourceDefinition) error {
+	current, err := w.Get(ctx, desired.Name)
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to check for existing CRD: %w", err)
 		}
 
-		w.log.Info("Creating CRD", "name", crd.Name)
-		if err := w.create(ctx, crd); err != nil {
+		w.log.Info("Creating CRD", "name", desired.Name)
+		if err := w.create(ctx, desired); err != nil {
 			return fmt.Errorf("failed to create CRD: %w", err)
 		}
 	} else {
-		w.log.Info("Updating existing CRD", "name", crd.Name)
-		if err := w.patch(ctx, crd); err != nil {
+		// CRD exists, check compatibility
+		diffResult, err := crdcompat.DiffSchema(current.Spec.Versions, desired.Spec.Versions)
+		if err != nil {
+			return fmt.Errorf("failed to check schema compatibility: %w", err)
+		}
+
+		// If there are no changes at all, we can skip the update
+		if !diffResult.HasChanges() {
+			w.log.Info("CRD is up-to-date", "name", desired.Name)
+			return nil
+		}
+
+		// Check for breaking changes
+		if diffResult.HasBreakingChanges() {
+			w.log.Info("Breaking changes detected in CRD update", "name", desired.Name, "breakingChanges", len(diffResult.BreakingChanges), "summary", diffResult)
+			return fmt.Errorf("cannot update CRD %s: breaking changes detected: %s", desired.Name, diffResult)
+		}
+
+		w.log.Info("Updating existing CRD", "name", desired.Name)
+		if err := w.patch(ctx, desired); err != nil {
 			return fmt.Errorf("failed to patch CRD: %w", err)
 		}
 	}
 
-	return w.waitForReady(ctx, crd.Name)
+	return w.waitForReady(ctx, desired.Name)
 }
 
 // Get retrieves a CRD by name
