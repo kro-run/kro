@@ -72,7 +72,7 @@ func NewResourceGraphDefinitionReconciler(
 		allowCRDDeletion:  allowCRDDeletion,
 		crdManager:        crdWrapper,
 		dynamicController: dynamicController,
-		metadataLabeler:   metadata.NewKROMetaLabeler("0.2.1"),
+		metadataLabeler:   metadata.NewKROMetaLabeler(),
 		rgBuilder:         builder,
 	}
 }

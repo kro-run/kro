@@ -1,5 +1,7 @@
 
-RELEASE_VERSION ?= dev-$(shell git rev-parse --short HEAD)
+GIT_COMMIT ?= $(shell git rev-parse --short HEAD)
+BUILD_DATE ?= $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
+RELEASE_VERSION ?= dev-$(GIT_COMMIT)
 OCI_REPO ?= ghcr.io/kro-run/kro
 
 HELM_IMAGE ?= ${OCI_REPO}
@@ -8,6 +10,10 @@ KO_DOCKER_REPO ?= ${OCI_REPO}/kro
 KOCACHE ?= ~/.ko
 KO_PUSH ?= true
 export KIND_CLUSTER_NAME ?= kro
+
+LDFLAGS ?= -X github.com/kro-run/kro/pkg.Version=$(RELEASE_VERSION) \
+           -X github.com/kro-run/kro/pkg.GitCommit=$(GIT_COMMIT) \
+           -X github.com/kro-run/kro/pkg.BuildDate=$(BUILD_DATE)
 
 WITH_GOFLAGS = GOFLAGS="$(GOFLAGS)"
 
@@ -106,7 +112,7 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 
 .PHONY: build
 build: manifests generate fmt vet ## Build controller binary.
-	go build -o bin/controller ./cmd/controller/main.go
+	go build -ldflags=${LDFLAGS} -o bin/controller ./cmd/controller/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
@@ -188,13 +194,15 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 build-image: ko ## Build the kro controller images using ko build
 	echo "Building kro image $(RELEASE_VERSION).."
 	$(WITH_GOFLAGS) KOCACHE=$(KOCACHE) KO_DOCKER_REPO=$(KO_DOCKER_REPO) \
+		GIT_COMMIT=$(GIT_COMMIT) RELEASE_VERSION=$(RELEASE_VERSION) BUILD_DATE=$(BUILD_DATE) \
 		$(KO) build --bare github.com/kro-run/kro/cmd/controller \
 		--local\
 		--push=false --tags ${RELEASE_VERSION} --sbom=none
 
 .PHONY: publish
 publish-image: ko ## Publish the kro controller images to ghcr.io
-	$(WITH_GOFLAGS) KOCACHE=$(KOCACHE) \
+	$(WITH_GOFLAGS) KOCACHE=$(KOCACHE) KO_DOCKER_REPO=$(KO_DOCKER_REPO) \
+		GIT_COMMIT=$(GIT_COMMIT) RELEASE_VERSION=$(RELEASE_VERSION) BUILD_DATE=$(BUILD_DATE) \
 		$(KO) publish --bare github.com/kro-run/kro/cmd/controller \
 		--tags ${RELEASE_VERSION} --sbom=none
 
