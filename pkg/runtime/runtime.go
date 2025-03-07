@@ -519,9 +519,9 @@ func (rt *ResourceGraphDefinitionRuntime) areDependenciesIgnored(resourceID stri
 	return false
 }
 
-// WantToCreateResource returns true if all the condition expressions return true
+// ReadyToProcessResource returns true if all the condition expressions return true
 // if not it will add itself to the ignored resources
-func (rt *ResourceGraphDefinitionRuntime) WantToCreateResource(resourceID string) (bool, error) {
+func (rt *ResourceGraphDefinitionRuntime) ReadyToProcessResource(resourceID string) (bool, error) {
 	if rt.areDependenciesIgnored(resourceID) {
 		return false, nil
 	}

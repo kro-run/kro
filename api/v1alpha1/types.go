@@ -90,6 +90,9 @@ type Resource struct {
 	ID string `json:"id,omitempty"`
 	// +kubebuilder:validation:Required
 	Template runtime.RawExtension `json:"template,omitempty"`
+	// ReadOnly indicates an external resource we want to read and use in the Graph
+	// +kubebuilder:validation:Optional
+	ReadOnly bool `json:"readOnly,omitempty"`
 	// +kubebuilder:validation:Optional
 	ReadyWhen []string `json:"readyWhen,omitempty"`
 	// +kubebuilder:validation:Optional
