@@ -14,6 +14,7 @@
 package graph
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -68,6 +69,99 @@ func TestResource_Dependencies(t *testing.T) {
 
 			// Verify final dependencies
 			assert.ElementsMatch(t, tt.finalDeps, r.GetDependencies())
+		})
+	}
+}
+
+func TestGetDependencies(t *testing.T) {
+	tests := []struct {
+		name     string
+		resource *Resource
+		want     []string
+	}{
+		{
+			name: "implicit dependencies only",
+			resource: &Resource{
+				dependencies: []string{"dep1", "dep2"},
+			},
+			want: []string{"dep1", "dep2"},
+		},
+		{
+			name: "explicit dependencies only",
+			resource: &Resource{
+				explicitDependencies: []string{"dep3", "dep4"},
+			},
+			want: []string{"dep3", "dep4"},
+		},
+		{
+			name: "both implicit and explicit dependencies",
+			resource: &Resource{
+				dependencies:         []string{"dep1", "dep2"},
+				explicitDependencies: []string{"dep2", "dep3"}, // dep2 is duplicate
+			},
+			want: []string{"dep1", "dep2", "dep3"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.resource.GetDependencies()
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("GetDependencies() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHasDependency(t *testing.T) {
+	tests := []struct {
+		name     string
+		resource *Resource
+		checkDep string
+		want     bool
+	}{
+		{
+			name: "has implicit dependency",
+			resource: &Resource{
+				dependencies: []string{"dep1", "dep2"},
+			},
+			checkDep: "dep1",
+			want:     true,
+		},
+		{
+			name: "has explicit dependency",
+			resource: &Resource{
+				explicitDependencies: []string{"dep3", "dep4"},
+			},
+			checkDep: "dep3",
+			want:     true,
+		},
+		{
+			name: "has dependency in both",
+			resource: &Resource{
+				dependencies:         []string{"dep1", "dep2"},
+				explicitDependencies: []string{"dep2", "dep3"},
+			},
+			checkDep: "dep2",
+			want:     true,
+		},
+		{
+			name: "no such dependency",
+			resource: &Resource{
+				dependencies:         []string{"dep1", "dep2"},
+				explicitDependencies: []string{"dep3", "dep4"},
+			},
+			checkDep: "dep5",
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.resource.HasDependency(tt.checkDep)
+			if got != tt.want {
+				t.Errorf("HasDependency() = %v, want %v", got, tt.want)
+			}
 		})
 	}
 }

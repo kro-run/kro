@@ -73,6 +73,12 @@ spec:
                 description: The resources that are part of the resourcegraphdefinition.
                 items:
                   properties:
+                    dependsOn:
+                      description: DependsOn defines explicit dependencies on other
+                        resources
+                      items:
+                        type: string
+                      type: array
                     id:
                       type: string
                     includeWhen:
@@ -167,7 +173,7 @@ spec:
                       format: date-time
                       type: string
                     message:
-                      description: A human readable message indicating details about
+                      description: A human-readable message indicating details about
                         the transition.
                       type: string
                     observedGeneration:

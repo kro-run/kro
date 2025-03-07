@@ -25,7 +25,7 @@ import (
 	"github.com/kro-run/kro/pkg/graph/variable"
 )
 
-// Resource represents a resource in a resource graph definition, it hholds
+// Resource represents a resource in a resource graph definition, it holds
 // information about the resource, its schema, and its variables.
 //
 // This object can only be created by the GraphBuilder and it should
@@ -58,7 +58,7 @@ type Resource struct {
 	emulatedObject *unstructured.Unstructured
 	// variables is a list of the variables found in the resource (CEL expressions).
 	variables []*variable.ResourceField
-	// dependencies is a list of the resources this resource depends on.
+	// dependencies is a list of the resources this resource depends on implicitly via CEL expressions.
 	dependencies []string
 	// readyWhenExpressions is a list of the expressions that need to be evaluated
 	// before the resource is considered ready.
@@ -66,6 +66,8 @@ type Resource struct {
 	// includeWhenExpressions is a list of the expresisons that need to be evaluated
 	// to decide whether to create a resource graph definition or not
 	includeWhenExpressions []string
+	// explicitDependencies are the dependencies explicitly defined in the resource graph definition.
+	explicitDependencies []string
 	// namespaced indicates if the resource is namespaced or cluster-scoped.
 	// This is useful when initiating the dynamic client to interact with the
 	// resource.
@@ -75,18 +77,51 @@ type Resource struct {
 	order int
 }
 
-// GetDependencies returns the dependencies of the resource.
+// GetDependencies returns all dependencies of the resource, including both implicit
+// dependencies from CEL expressions and explicit dependencies from dependsOn.
 func (r *Resource) GetDependencies() []string {
-	return r.dependencies
+	// If there are no explicit dependencies, return implicit ones directly
+	if len(r.explicitDependencies) == 0 {
+		return r.dependencies
+	}
+
+	// Create a map for O(1) lookup and deduplication
+	seen := make(map[string]struct{}, len(r.dependencies))
+	allDeps := make([]string, len(r.dependencies), len(r.dependencies)+len(r.explicitDependencies))
+
+	// Copy implicit dependencies and mark as seen
+	copy(allDeps, r.dependencies)
+	for _, dep := range r.dependencies {
+		seen[dep] = struct{}{}
+	}
+
+	// Add explicit dependencies that haven't been seen
+	for _, dep := range r.explicitDependencies {
+		if _, exists := seen[dep]; !exists {
+			allDeps = append(allDeps, dep)
+			seen[dep] = struct{}{}
+		}
+	}
+
+	return allDeps
 }
 
-// HasDependency checks if the resource has a dependency on another resource.
+// HasDependency checks if the resource has either an implicit or explicit dependency on another resource.
 func (r *Resource) HasDependency(dep string) bool {
+	// Check implicit dependencies
 	for _, d := range r.dependencies {
 		if d == dep {
 			return true
 		}
 	}
+
+	// Check explicit dependencies
+	for _, d := range r.explicitDependencies {
+		if d == dep {
+			return true
+		}
+	}
+
 	return false
 }
 
@@ -176,6 +211,7 @@ func (r *Resource) DeepCopy() *Resource {
 		dependencies:           slices.Clone(r.dependencies),
 		readyWhenExpressions:   slices.Clone(r.readyWhenExpressions),
 		includeWhenExpressions: slices.Clone(r.includeWhenExpressions),
+		explicitDependencies:   slices.Clone(r.explicitDependencies),
 		namespaced:             r.namespaced,
 	}
 }
