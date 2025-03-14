@@ -326,6 +326,13 @@ func (b *Builder) buildRGResource(rgResource *v1alpha1.Resource, namespacedResou
 		return nil, fmt.Errorf("failed to parse includeWhen expressions: %v", err)
 	}
 
+	// 8. Validate explicit dependencies
+	for _, dep := range rgResource.DependsOn {
+		if dep == rgResource.ID {
+			return nil, fmt.Errorf("resource %s cannot depend on itself", rgResource.ID)
+		}
+	}
+
 	_, isNamespaced := namespacedResources[gvk.GroupKind()]
 
 	// Note that at this point we don't inject the dependencies into the resource.
@@ -338,6 +345,7 @@ func (b *Builder) buildRGResource(rgResource *v1alpha1.Resource, namespacedResou
 		variables:              resourceVariables,
 		readyWhenExpressions:   readyWhen,
 		includeWhenExpressions: includeWhen,
+		explicitDependencies:   rgResource.DependsOn,
 		namespaced:             isNamespaced,
 		order:                  order,
 	}, nil
@@ -376,6 +384,25 @@ func (b *Builder) buildDependencyGraph(
 		}
 	}
 
+	// First, process explicit dependencies from dependsOn fields
+	for _, resource := range resources {
+		for _, explicitDep := range resource.explicitDependencies {
+			// Verify that the dependency exists
+			if _, exists := resources[explicitDep]; !exists {
+				return nil, fmt.Errorf("resource %s has explicit dependency on non-existent resource %s", resource.id, explicitDep)
+			}
+
+			// Add the dependency to the resource
+			resource.addDependency(explicitDep)
+
+			// Add the dependency to the graph
+			if err := directedAcyclicGraph.AddDependencies(resource.id, []string{explicitDep}); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Then process implicit dependencies from CEL expressions
 	for _, resource := range resources {
 		for _, resourceVariable := range resource.variables {
 			for _, expression := range resourceVariable.Expressions {

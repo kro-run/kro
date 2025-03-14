@@ -94,6 +94,9 @@ type Resource struct {
 	ReadyWhen []string `json:"readyWhen,omitempty"`
 	// +kubebuilder:validation:Optional
 	IncludeWhen []string `json:"includeWhen,omitempty"`
+	// +kubebuilder:validation:Optional
+	// DependsOn defines explicit dependencies on other resources
+	DependsOn []string `json:"dependsOn,omitempty"`
 }
 
 // ResourceGraphDefinitionState defines the state of the resource graph definition.
