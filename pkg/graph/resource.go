@@ -73,6 +73,8 @@ type Resource struct {
 	// order reflects the original order in which the resources were specified,
 	// and lets us keep the client-specified ordering where the dependencies allow.
 	order int
+	// readOnly indicates if the resource should only be read and not created/updated
+	readOnly bool
 }
 
 // GetDependencies returns the dependencies of the resource.
@@ -164,6 +166,11 @@ func (r *Resource) IsNamespaced() bool {
 	return r.namespaced
 }
 
+// IsReadOnly returns whether the resource is read-only
+func (r *Resource) IsReadOnly() bool {
+	return r.readOnly
+}
+
 // DeepCopy returns a deep copy of the resource.
 func (r *Resource) DeepCopy() *Resource {
 	return &Resource{
@@ -177,5 +184,6 @@ func (r *Resource) DeepCopy() *Resource {
 		readyWhenExpressions:   slices.Clone(r.readyWhenExpressions),
 		includeWhenExpressions: slices.Clone(r.includeWhenExpressions),
 		namespaced:             r.namespaced,
+		readOnly:               r.readOnly,
 	}
 }
