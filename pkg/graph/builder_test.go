@@ -1226,3 +1226,164 @@ func TestNewBuilder(t *testing.T) {
 	assert.Nil(t, err)
 	assert.NotNil(t, builder)
 }
+
+func TestBuilder_buildDependencyGraph_ImplicitAndExplicitDependencies(t *testing.T) {
+	tests := []struct {
+		name      string
+		resources map[string]*Resource
+		// wantDeps specifies the expected merged dependencies for each resource.
+		wantDeps map[string][]string
+		wantErr  bool
+		errMsg   string
+	}{
+		{
+			name: "explicit only dependency",
+			resources: map[string]*Resource{
+				"res1": {
+					id:                   "res1",
+					explicitDependencies: []string{"res2"},
+					order:                1,
+				},
+				"res2": {
+					id:    "res2",
+					order: 2,
+				},
+			},
+			wantDeps: map[string][]string{
+				"res1": {"res2"},
+				"res2": {},
+			},
+			wantErr: false,
+		},
+		{
+			name: "implicit only dependency",
+			resources: map[string]*Resource{
+				"res1": {
+					id: "res1",
+					// Simulate an implicit dependency via a CEL expression that references "res2"
+					variables: []*variable.ResourceField{
+						{
+							FieldDescriptor: variable.FieldDescriptor{
+								Path:        "spec.field",
+								Expressions: []string{"res2.field"},
+							},
+							Kind: variable.ResourceVariableKindStatic,
+						},
+					},
+					order: 1,
+				},
+				"res2": {
+					id:    "res2",
+					order: 2,
+				},
+			},
+			wantDeps: map[string][]string{
+				"res1": {"res2"},
+				"res2": {},
+			},
+			wantErr: false,
+		},
+		{
+			name: "mixed explicit and implicit dependencies",
+			resources: map[string]*Resource{
+				"res1": {
+					id:                   "res1",
+					explicitDependencies: []string{"res3"},
+					variables: []*variable.ResourceField{
+						{
+							FieldDescriptor: variable.FieldDescriptor{
+								Path:        "spec.field",
+								Expressions: []string{"res2.field"},
+							},
+							Kind: variable.ResourceVariableKindStatic,
+						},
+					},
+					order: 1,
+				},
+				"res2": {
+					id:    "res2",
+					order: 2,
+				},
+				"res3": {
+					id:    "res3",
+					order: 3,
+				},
+			},
+			// The merged dependencies should include both the implicit dependency "res2"
+			// and the explicit dependency "res3". The order is not critical.
+			wantDeps: map[string][]string{
+				"res1": {"res2", "res3"},
+				"res2": {},
+				"res3": {},
+			},
+			wantErr: false,
+		},
+		{
+			name: "explicit dependency on non-existent resource",
+			resources: map[string]*Resource{
+				"res1": {
+					id:                   "res1",
+					explicitDependencies: []string{"nonexistent"},
+					order:                1,
+				},
+			},
+			wantErr: true,
+			errMsg:  "resource res1 has explicit dependency on non-existent resource nonexistent",
+		},
+		{
+			name: "circular explicit dependencies",
+			resources: map[string]*Resource{
+				"res1": {
+					id:                   "res1",
+					explicitDependencies: []string{"res2"},
+					order:                1,
+				},
+				"res2": {
+					id:                   "res2",
+					explicitDependencies: []string{"res1"},
+					order:                2,
+				},
+			},
+			wantErr: true,
+			errMsg:  "graph contains a cycle",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a Builder instance. For testing purposes, we assume that any
+			// dependencies on the CEL environment succeed.
+			b := &Builder{}
+
+			dag, err := b.buildDependencyGraph(tt.resources)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if err != nil {
+					assert.Contains(t, err.Error(), tt.errMsg)
+				}
+				return
+			}
+
+			assert.NoError(t, err)
+			assert.NotNil(t, dag)
+
+			// Verify that for each resource, every expected dependency is present
+			// in the corresponding DAG vertex.
+			for id, res := range tt.resources {
+				expectedDeps := tt.wantDeps[id]
+				vertex, ok := dag.Vertices[id]
+				assert.True(t, ok, "vertex for resource %s should exist in the DAG", id)
+				// The resource's merged dependencies (from GetDependencies)
+				actualDeps := res.GetDependencies()
+
+				// Check that every expected dependency is present in the DAG.
+				for _, dep := range expectedDeps {
+					assert.Contains(t, vertex.DependsOn, dep, "resource %s should depend on %s", id, dep)
+					assert.Contains(t, actualDeps, dep, "GetDependencies() for resource %s should include %s", id, dep)
+				}
+				// Also check that the count matches (order may not be significant)
+				assert.Equal(t, len(expectedDeps), len(vertex.DependsOn), "dependency count mismatch for resource %s", id)
+			}
+		})
+	}
+}
