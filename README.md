@@ -7,6 +7,7 @@
 ![GitHub License](https://img.shields.io/github/license/kro-run/kro)
 [![Build and Publish](https://github.com/kro-run/kro/actions/workflows/build-push-image.yaml/badge.svg?branch=main)](https://github.com/kro-run/kro/actions/workflows/build-push-image.yaml)
 ![GitHub Repo stars](https://img.shields.io/github/stars/kro-run/kro)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/kro-run/kro/badge)](https://securityscorecards.dev/viewer/?uri=github.com/kro-run/kro)
 
 This project aims to simplify the creation and management of complex custom resources for Kubernetes.
 
