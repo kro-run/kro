@@ -2,14 +2,14 @@ name: Build and Publish
 
 on:
   push:
-    branches: [ main ]
-    tags: [ 'v*' ]
+    branches: [main]
+    tags: ["v*"]
     paths:
       - "**.go"
       - go.mod
       - go.sum
   pull_request:
-    branches: [ main ]
+    branches: [main]
     paths:
       - "**.go"
       - go.mod
@@ -17,6 +17,7 @@ on:
 
 env:
   KO_DOCKER_REPO: ghcr.io/${{ github.repository }}/controller
+  KO_CONFIG_PATH: .ko-ci.yaml
 
 jobs:
   build-and-push:
@@ -32,17 +33,14 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.24'
+          go-version: "1.24"
 
       - name: Install Dependencies
         run: |
           go mod download
-          go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.16.2
-          go install sigs.k8s.io/kustomize/kustomize/v5@v5.2.1
-          go install github.com/google/ko@latest
 
-      - name: Run tests
-        run: make test WHAT=unit
+      - name: Run Tests
+        run: go test -v ./pkg/...
 
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
@@ -60,28 +58,35 @@ jobs:
           else
             echo "RELEASE_VERSION=dev-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
           fi
+          echo "GIT_COMMIT=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
 
       # Build and push image on push to main
       - name: Build and Push Image
         if: github.event_name != 'pull_request'
         run: |
-          make publish-image
+          go tool ko build \
+            --bare \
+            github.com/kro-run/kro/cmd/controller \
+            --tags $RELEASE_VERSION \
+            --sbom=none
 
       # Build image only on PR
       - name: Build Image (PR)
         if: github.event_name == 'pull_request'
         run: |
-          make build-image
+          go tool ko build \
+            --bare \
+            github.com/kro-run/kro/cmd/controller \
+            --tags $RELEASE_VERSION \
+            --sbom=none \
+            --push=false
 
       # Push helm chart only on tag
       - name: Package and Push Helm Chart
         if: github.ref_type == 'tag'
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
-          # Use sed compatible with Linux (GitHub Actions runners)
-          cp ./config/crd/bases/* helm/crds/
-          sed -i "s/tag: .*/tag: \"${RELEASE_VERSION}\"/" helm/values.yaml
-          sed -i "s/version: .*/version: ${RELEASE_VERSION}/" helm/Chart.yaml
-          sed -i "s/appVersion: .*/appVersion: \"${RELEASE_VERSION}\"/" helm/Chart.yaml
-          helm package helm
-          HELM_IMAGE=ghcr.io/${{ github.repository }} make publish-helm
+          sed -i "s/tag: \".*\"/tag: \"$RELEASE_VERSION\"/ helm/values.yaml
+          helm package helm --version $RELEASE_VERSION --app-version $RELEASE_VERSION
+          helm push ./kro-$RELEASE_VERSION.tgz oci://ghcr.io/${{ github.repository }}

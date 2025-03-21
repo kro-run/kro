@@ -1,15 +1,16 @@
-// Copyright 2025 The Kube Resource Orchestrator Authors.
+// Copyright 2025 The Kube Resource Orchestrator Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License"). You may
-// not use this file except in compliance with the License. A copy of the
-// License is located at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//    http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// or in the "license" file accompanying this file. This file is distributed
-// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
-// express or implied. See the License for the specific language governing
-// permissions and limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package instance
 
@@ -75,7 +76,10 @@ func (igr *instanceGraphReconciler) reconcile(ctx context.Context) error {
 
 // handleReconciliation provides a common wrapper for reconciliation operations,
 // handling status updates and error management.
-func (igr *instanceGraphReconciler) handleReconciliation(ctx context.Context, reconcileFunc func(context.Context) error) error {
+func (igr *instanceGraphReconciler) handleReconciliation(
+	ctx context.Context,
+	reconcileFunc func(context.Context) error,
+) error {
 	defer func() {
 		// Update instance state based on reconciliation result
 		igr.updateInstanceState()
@@ -145,7 +149,7 @@ func (igr *instanceGraphReconciler) reconcileResource(ctx context.Context, resou
 	// Check if resource should be created
 	if want, err := igr.runtime.WantToCreateResource(resourceID); err != nil || !want {
 		log.V(1).Info("Skipping resource creation", "reason", err)
-		resourceState.State = "SKIPPED"
+		resourceState.State = ResourceStateSkipped
 		igr.runtime.IgnoreResource(resourceID)
 		return nil
 	}
@@ -179,7 +183,7 @@ func (igr *instanceGraphReconciler) handleResourceReconciliation(
 		if apierrors.IsNotFound(err) {
 			return igr.handleResourceCreation(ctx, rc, resource, resourceID, resourceState)
 		}
-		resourceState.State = "ERROR"
+		resourceState.State = ResourceStateError
 		resourceState.Err = fmt.Errorf("failed to get resource: %w", err)
 		return resourceState.Err
 	}
@@ -190,12 +194,12 @@ func (igr *instanceGraphReconciler) handleResourceReconciliation(
 	// Check resource readiness
 	if ready, reason, err := igr.runtime.IsResourceReady(resourceID); err != nil || !ready {
 		log.V(1).Info("Resource not ready", "reason", reason, "error", err)
-		resourceState.State = "WAITING_FOR_READINESS"
+		resourceState.State = ResourceStateWaitingForReadiness
 		resourceState.Err = fmt.Errorf("resource not ready: %s: %w", reason, err)
 		return igr.delayedRequeue(resourceState.Err)
 	}
 
-	resourceState.State = "SYNCED"
+	resourceState.State = ResourceStateSynced
 	return igr.updateResource(ctx, rc, resource, observed, resourceID, resourceState)
 }
 
@@ -224,12 +228,12 @@ func (igr *instanceGraphReconciler) handleResourceCreation(
 	// Apply labels and create resource
 	igr.instanceSubResourcesLabeler.ApplyLabels(resource)
 	if _, err := rc.Create(ctx, resource, metav1.CreateOptions{}); err != nil {
-		resourceState.State = "ERROR"
+		resourceState.State = ResourceStateError
 		resourceState.Err = fmt.Errorf("failed to create resource: %w", err)
 		return resourceState.Err
 	}
 
-	resourceState.State = "CREATED"
+	resourceState.State = ResourceStateCreated
 	return igr.delayedRequeue(fmt.Errorf("awaiting resource creation completion"))
 }
 
@@ -247,14 +251,14 @@ func (igr *instanceGraphReconciler) updateResource(
 	// Compare desired and observed states
 	differences, err := delta.Compare(desired, observed)
 	if err != nil {
-		resourceState.State = "ERROR"
+		resourceState.State = ResourceStateError
 		resourceState.Err = fmt.Errorf("failed to compare desired and observed states: %w", err)
 		return resourceState.Err
 	}
 
 	// If no differences are found, the resource is in sync.
 	if len(differences) == 0 {
-		resourceState.State = "SYNCED"
+		resourceState.State = ResourceStateSynced
 		igr.log.V(1).Info("No deltas found for resource", "resourceID", resourceID)
 		return nil
 	}
@@ -275,13 +279,13 @@ func (igr *instanceGraphReconciler) updateResource(
 	desired.SetFinalizers(observed.GetFinalizers())
 	_, err = rc.Update(ctx, desired, metav1.UpdateOptions{})
 	if err != nil {
-		resourceState.State = "ERROR"
+		resourceState.State = ResourceStateError
 		resourceState.Err = fmt.Errorf("failed to update resource: %w", err)
 		return resourceState.Err
 	}
 
 	// Set state to UPDATING and requeue to check the update
-	resourceState.State = "UPDATING"
+	resourceState.State = ResourceStateUpdating
 	return igr.delayedRequeue(fmt.Errorf("resource update in progress"))
 }
 
@@ -375,7 +379,7 @@ func (igr *instanceGraphReconciler) deleteResource(ctx context.Context, resource
 			igr.state.ResourceStates[resourceID].State = "DELETED"
 			return nil
 		}
-		igr.state.ResourceStates[resourceID].State = InstanceStateError
+		igr.state.ResourceStates[resourceID].State = ResourceStateError
 		igr.state.ResourceStates[resourceID].Err = fmt.Errorf("failed to delete resource: %w", err)
 		return igr.state.ResourceStates[resourceID].Err
 	}
@@ -406,7 +410,11 @@ func (igr *instanceGraphReconciler) finalizeDeletion(ctx context.Context) error 
 }
 
 // setManaged ensures the instance has the necessary finalizer and labels.
-func (igr *instanceGraphReconciler) setManaged(ctx context.Context, obj *unstructured.Unstructured, uid types.UID) (*unstructured.Unstructured, error) {
+func (igr *instanceGraphReconciler) setManaged(
+	ctx context.Context,
+	obj *unstructured.Unstructured,
+	_ types.UID,
+) (*unstructured.Unstructured, error) {
 	if exist, _ := metadata.HasInstanceFinalizerUnstructured(obj); exist {
 		return obj, nil
 	}
@@ -431,7 +439,10 @@ func (igr *instanceGraphReconciler) setManaged(ctx context.Context, obj *unstruc
 }
 
 // setUnmanaged removes the finalizer from the instance.
-func (igr *instanceGraphReconciler) setUnmanaged(ctx context.Context, obj *unstructured.Unstructured) (*unstructured.Unstructured, error) {
+func (igr *instanceGraphReconciler) setUnmanaged(
+	ctx context.Context,
+	obj *unstructured.Unstructured,
+) (*unstructured.Unstructured, error) {
 	if exist, _ := metadata.HasInstanceFinalizerUnstructured(obj); !exist {
 		return obj, nil
 	}
