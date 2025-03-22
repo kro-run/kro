@@ -22,18 +22,12 @@ kro is Kubernetes native and integrates seamlessly with existing tools to preser
 
 | Title                                  | Description                     |
 | -------------------------------------- | ------------------------------- |
-| [Introduction][kro-overview]           | An introduction to kro          |
-| [Installation][kro-installation]       | Install kro in your cluster     |
-| [Getting started][kro-getting-started] | Deploy your first ResourceGraphDefinition |
-| [Concepts][kro-concepts]               | Learn more about kro concepts   |
-| [Examples][kro-examples]               | Example resources               |
-| [Contributions](./CONTRIBUTING.md)       | How to get involved             |
-
-[kro-overview]: https://kro.run/docs/overview
-[kro-installation]: https://kro.run/docs/getting-started/Installation
-[kro-getting-started]: https://kro.run/docs/getting-started/deploy-a-resource-graph-definition
-[kro-concepts]: https://kro.run/docs/concepts/resource-group-definitions
-[kro-examples]: https://kro.run/examples/
+| <a href="https://kro.run/docs/overview" target="_blank" rel="noopener noreferrer">Introduction</a> | An introduction to kro          |
+| <a href="https://kro.run/docs/getting-started/Installation" target="_blank" rel="noopener noreferrer">Installation</a> | Install kro in your cluster     |
+| <a href="https://kro.run/docs/getting-started/deploy-a-resource-graph-definition" target="_blank" rel="noopener noreferrer">Getting started</a> | Deploy your first ResourceGraphDefinition |
+| <a href="https://kro.run/docs/concepts/resource-group-definitions" target="_blank" rel="noopener noreferrer">Concepts</a> | Learn more about kro concepts   |
+| <a href="https://kro.run/examples/" target="_blank" rel="noopener noreferrer">Examples</a> | Example resources               |
+| <a href="https://github.com/kro-run/kro/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">Contributions</a> | How to get involved  
 
 ## FAQ
 
@@ -75,16 +69,13 @@ kro is Kubernetes native and integrates seamlessly with existing tools to preser
 
 ## Community Participation
 
-Development and discussion is coordinated in the [Kubernetes Slack (invite link)][k8s-slack] channel [#kro][kro-channel] channel.
-
-[k8s-slack]: https://communityinviter.com/apps/kubernetes/community
-[kro-channel]: https://kubernetes.slack.com/archives/C081TMY9D6Y
+Development and discussion is coordinated in the <a href="https://communityinviter.com/apps/kubernetes/community" target="_blank" rel="noopener noreferrer">Kubernetes Slack (invite link)</a> channel <a href="https://kubernetes.slack.com/archives/C081TMY9D6Y" target="_blank" rel="noopener noreferrer">#kro</a> channel.
 
 Please join our community meeting.
-* Every other Wednesday at 9AM PT (Pacific Time). [Convert to local timezone][tz-help] 
-* Agenda: [Public doc][agenda]
-* Join us: [Zoom meeting][zoom]
-* Community meeting recordings:  [YouTube channel][youtube]
+* Every other Wednesday at 9AM PT (Pacific Time). <a href="http://www.thetimezoneconverter.com/?t=9%3A00&tz=PT%20%28Pacific%20Time%29" target="_blank" rel="noopener noreferrer">Convert to local timezone</a> 
+* Agenda: <a href="https://docs.google.com/document/d/1GqeHcBlOw6ozo-qS4TLdXSi5qUn88QU6dwdq0GvxRz4/edit?tab=t.0" target="_blank" rel="noopener noreferrer">Public doc</a>
+* Join us: <a href="https://us06web.zoom.us/j/85388697226?pwd=9Xxz1F0FcNUq8zFGrsRqkHMhFZTpuj.1" target="_blank" rel="noopener noreferrer">Zoom meeting</a>
+* Community meeting recordings:  <a href="https://www.youtube.com/channel/UCUlcI3NYq9ehl5wsdfbJzSA" target="_blank" rel="noopener noreferrer">YouTube channel</a>
 
 
 [tz-help]: http://www.thetimezoneconverter.com/?t=9%3A00&tz=PT%20%28Pacific%20Time%29
@@ -94,8 +85,8 @@ Please join our community meeting.
 
 ## Security
 
-See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
+See <a href="https://github.com/kro-run/kro/blob/main/CONTRIBUTING.md#security-issue-notifications" target="_blank" rel="noopener noreferrer">CONTRIBUTING</a> for more information.
 
 ## License
 
-[Apache 2.0](LICENSE)
+<a href="https://github.com/kro-run/kro/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">Apache 2.0</a>
