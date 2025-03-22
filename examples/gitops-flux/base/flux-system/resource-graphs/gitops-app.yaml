@@ -1,0 +1,85 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: gitops-app.kro.run
+spec:
+  schema:
+    apiVersion: v1alpha1
+    group: kro.run
+    kind: GitOpsApp
+    spec:
+      name: string
+      namespace: string
+      image: string
+      replicas: integer
+      env: string
+    status:
+      availableReplicas: integer
+      deploymentConditions: array
+
+  resources:
+    - id: deployment
+      readyWhen:
+        - ${deployment.spec.replicas == deployment.status.availableReplicas}
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ${schema.spec.name}
+          namespace: ${schema.spec.namespace}
+          labels:
+            app: ${schema.spec.name}
+        spec:
+          replicas: ${schema.spec.replicas}
+          selector:
+            matchLabels:
+              app: ${schema.spec.name}
+          template:
+            metadata:
+              labels:
+                app: ${schema.spec.name}
+            spec:
+              containers:
+                - name: app
+                  image: ${schema.spec.image}
+                  ports:
+                    - containerPort: 8080
+                  resources:
+                    limits:
+                      cpu: "1"
+                      memory: "512Mi"
+                    requests:
+                      cpu: "200m"
+                      memory: "256Mi"
+    
+    - id: service
+      template:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: ${schema.spec.name}
+          namespace: ${schema.spec.namespace}
+          labels:
+            app: ${schema.spec.name}
+        spec:
+          selector:
+            app: ${schema.spec.name}
+          ports:
+            - port: 80
+              targetPort: 8080
+          type: ClusterIP
+    
+    - id: kustomization
+      template:
+        apiVersion: kustomize.toolkit.fluxcd.io/v1
+        kind: Kustomization
+        metadata:
+          name: ${schema.spec.name}
+          namespace: ${schema.spec.namespace}
+        spec:
+          interval: 1m
+          path: "./overlays/${schema.spec.env}"
+          prune: true
+          sourceRef:
+            kind: GitRepository
+            name: "${schema.spec.name}-source" 
