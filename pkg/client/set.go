@@ -30,6 +30,7 @@ type Set struct {
 	kubernetes      *kubernetes.Clientset
 	dynamic         *dynamic.DynamicClient
 	apiExtensionsV1 *apiextensionsv1.ApiextensionsV1Client
+	crdWatcher      *CRDWatcher
 }
 
 // Config holds configuration for client creation
@@ -124,6 +125,18 @@ func (s *Set) CRD(cfg CRDWrapperConfig) *CRDWrapper {
 	}
 
 	return newCRDWrapper(cfg)
+}
+
+// CRDWatcher returns the CRD watcher instance, creating it if it doesn't exist
+func (s *Set) CRDWatcher(cfg CRDWatcherConfig) *CRDWatcher {
+	if s.crdWatcher == nil {
+		if cfg.Client == nil {
+			cfg.Client = s.apiExtensionsV1
+		}
+		s.crdWatcher = NewCRDWatcher(cfg)
+	}
+
+	return s.crdWatcher
 }
 
 // WithImpersonation returns a new client that impersonates the given user

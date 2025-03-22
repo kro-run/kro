@@ -21,6 +21,7 @@ import (
 	"github.com/go-logr/logr"
 	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/kro-run/kro/api/v1alpha1"
 	instancectrl "github.com/kro-run/kro/pkg/controller/instance"
@@ -133,10 +134,62 @@ func buildResourceInfo(name string, deps []string) v1alpha1.ResourceInformation 
 }
 
 // reconcileResourceGraphDefinitionCRD ensures the CRD is present and up to date in the cluster
+// and registers a callback with the CRD watcher to trigger reconciliation when changes are detected
 func (r *ResourceGraphDefinitionReconciler) reconcileResourceGraphDefinitionCRD(ctx context.Context, crd *v1.CustomResourceDefinition) error {
+	log, _ := logr.FromContext(ctx)
+
+	// Ensure the CRD exists and is up to date
 	if err := r.crdManager.Ensure(ctx, *crd); err != nil {
 		return newCRDError(err)
 	}
+
+	// Register a callback with the CRD watcher to trigger reconciliation when changes are detected
+	r.crdWatcher.RegisterCallback(crd.Name, func(updatedCRD *v1.CustomResourceDefinition) {
+		log.Info("CRD modified outside of kro, triggering reconciliation", "crd", updatedCRD.Name)
+		
+		// Get the GVR from the CRD
+		gvr := GetGVRFromCRD(updatedCRD)
+		
+		// Stop the current controller for this GVR
+		if err := r.dynamicController.StopServiceGVK(ctx, gvr); err != nil {
+			log.Error(err, "Failed to stop controller for modified CRD", "gvr", gvr)
+			return
+		}
+		
+		// Reconcile the ResourceGraphDefinition to recreate the controller with the updated CRD
+		rgd := &v1alpha1.ResourceGraphDefinition{}
+		for k, v := range updatedCRD.Labels {
+			if k == metadata.ResourceGraphDefinitionNameLabel {
+				rgdName := v
+				rgdNamespace := updatedCRD.Labels[metadata.ResourceGraphDefinitionNamespaceLabel]
+				
+				// Get the ResourceGraphDefinition
+				if err := r.Client.Get(ctx, types.NamespacedName{Name: rgdName, Namespace: rgdNamespace}, rgd); err != nil {
+					log.Error(err, "Failed to get ResourceGraphDefinition for modified CRD", 
+						"name", rgdName, "namespace", rgdNamespace)
+					return
+				}
+				
+				// Trigger reconciliation by updating the ResourceGraphDefinition
+				// This is a simple approach - we're just adding an annotation to force reconciliation
+				if rgd.Annotations == nil {
+					rgd.Annotations = make(map[string]string)
+				}
+				rgd.Annotations["kro.run/last-crd-update"] = time.Now().Format(time.RFC3339)
+				
+				if err := r.Client.Update(ctx, rgd); err != nil {
+					log.Error(err, "Failed to update ResourceGraphDefinition to trigger reconciliation", 
+						"name", rgdName, "namespace", rgdNamespace)
+					return
+				}
+				
+				log.Info("Successfully triggered reconciliation for ResourceGraphDefinition", 
+					"name", rgdName, "namespace", rgdNamespace)
+				break
+			}
+		}
+	})
+
 	return nil
 }
 
@@ -170,3 +223,14 @@ func (e *microControllerError) Unwrap() error { return e.err }
 func newGraphError(err error) error           { return &graphError{err} }
 func newCRDError(err error) error             { return &crdError{err} }
 func newMicroControllerError(err error) error { return &microControllerError{err} }
+
+// GetGVRFromCRD extracts the GroupVersionResource from a CRD.
+func GetGVRFromCRD(crd *v1.CustomResourceDefinition) schema.GroupVersionResource {
+	// Get the first version from the CRD
+	version := crd.Spec.Versions[0].Name
+	return schema.GroupVersionResource{
+		Group:    crd.Spec.Group,
+		Version:  version,
+		Resource: crd.Spec.Names.Plural,
+	}
+}
