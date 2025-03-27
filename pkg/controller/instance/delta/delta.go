@@ -113,7 +113,17 @@ func walkCompare(desired, observed interface{}, path string, differences *[]Diff
 		}
 		walkMap(d, e, path, differences)
 
+	case nil:
+		// Special case: treat empty array and nil as equivalent
+		if isEmptyArrayOrNil(desired) && isEmptyArrayOrNil(observed) {
+			return
+		}
+
 	case []interface{}:
+		// Special case: if desired is empty array and observed is nil, treat as equal
+		if isEmptyArrayOrNil(desired) && isEmptyArrayOrNil(observed) {
+			return
+		}
 		e, ok := observed.([]interface{})
 		if !ok {
 			*differences = append(*differences, Difference{
@@ -136,6 +146,17 @@ func walkCompare(desired, observed interface{}, path string, differences *[]Diff
 	}
 }
 
+// isEmptyArrayOrNil returns true if the value is nil or an empty array
+func isEmptyArrayOrNil(v interface{}) bool {
+	if v == nil {
+		return true
+	}
+	if arr, ok := v.([]interface{}); ok && len(arr) == 0 {
+		return true
+	}
+	return false
+}
+
 // walkMap compares two maps recursively. For each key in desired:
 //
 // - If key missing in observed: records a difference
@@ -148,7 +169,7 @@ func walkMap(desired, observed map[string]interface{}, path string, differences 
 		}
 
 		observedVal, exists := observed[k]
-		if !exists && desiredVal != nil {
+		if !exists && !isEmptyArrayOrNil(desiredVal) {
 			*differences = append(*differences, Difference{
 				Path:     newPath,
 				Observed: nil,
