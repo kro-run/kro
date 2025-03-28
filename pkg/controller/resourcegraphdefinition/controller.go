@@ -45,6 +45,7 @@ type ResourceGraphDefinitionReconciler struct {
 	client.Client
 	clientSet  *kroclient.Set
 	crdManager kroclient.CRDClient
+	crdWatcher *kroclient.CRDWatcher
 
 	metadataLabeler   metadata.Labeler
 	rgBuilder         *graph.Builder
@@ -62,6 +63,9 @@ func NewResourceGraphDefinitionReconciler(
 	crdWrapper := clientSet.CRD(kroclient.CRDWrapperConfig{
 		Log: log,
 	})
+	crdWatcher := clientSet.CRDWatcher(kroclient.CRDWatcherConfig{
+		Log: log,
+	})
 	rgLogger := log.WithName("controller.resourceGraphDefinition")
 
 	return &ResourceGraphDefinitionReconciler{
@@ -71,6 +75,7 @@ func NewResourceGraphDefinitionReconciler(
 		Client:            mgrClient,
 		allowCRDDeletion:  allowCRDDeletion,
 		crdManager:        crdWrapper,
+		crdWatcher:        crdWatcher,
 		dynamicController: dynamicController,
 		metadataLabeler:   metadata.NewKROMetaLabeler(),
 		rgBuilder:         builder,
@@ -79,6 +84,12 @@ func NewResourceGraphDefinitionReconciler(
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ResourceGraphDefinitionReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// Start the CRD watcher
+	if err := r.crdWatcher.Start(context.Background()); err != nil {
+		r.log.Error(err, "Failed to start CRD watcher")
+		return err
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.ResourceGraphDefinition{}).
 		WithEventFilter(predicate.GenerationChangedPredicate{}).
