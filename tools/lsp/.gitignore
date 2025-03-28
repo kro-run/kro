@@ -1,0 +1,43 @@
+# Build outputs
+server/kro-language-server
+client/out/
+client/dist/
+**/*.vsix
+
+# Dependencies
+client/node_modules/
+client/package-lock.json
+
+# Debug files
+/tmp/kro-*
+server-pid.txt
+*debug*.log
+
+# Logs
+**/*.log
+npm-debug.log*
+
+# OS specific files
+.DS_Store
+**/.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+
+# Temporary files
+learning.js
+*.tmp
+*.bak
+*~
+.*.un~
+*.swp
+*.swo
+
+# IDE specific files
+.idea/
+**/.idea/
+
+# Go specific
+vendor/ 
