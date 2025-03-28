@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-logr/logr"
 	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/kro-run/kro/api/v1alpha1"
 	instancectrl "github.com/kro-run/kro/pkg/controller/instance"
@@ -34,7 +34,7 @@ import (
 // 2. Ensuring CRDs are present
 // 3. Setting up and starting the microcontroller
 func (r *ResourceGraphDefinitionReconciler) reconcileResourceGraphDefinition(ctx context.Context, rgd *v1alpha1.ResourceGraphDefinition) ([]string, []v1alpha1.ResourceInformation, error) {
-	log, _ := logr.FromContext(ctx)
+	log := ctrl.LoggerFrom(ctx)
 
 	// Process resource graph definition graph first to validate structure
 	log.V(1).Info("reconciling resource graph definition graph")
@@ -63,6 +63,9 @@ func (r *ResourceGraphDefinitionReconciler) reconcileResourceGraphDefinition(ctx
 	controller := r.setupMicroController(gvr, processedRGD, rgd.Spec.DefaultServiceAccounts, graphExecLabeler)
 
 	log.V(1).Info("reconciling resource graph definition micro controller")
+	// TODO: the context that is passed here is tied to the reconciliation of the rgd, we might need to make
+	// a new context with our own cancel function here to allow us to cleanly term the dynamic controller
+	// rather than have it ignore this context and use the background context.
 	if err := r.reconcileResourceGraphDefinitionMicroController(ctx, &gvr, controller.Reconcile); err != nil {
 		return processedRGD.TopologicalOrder, resourcesInfo, err
 	}
@@ -83,8 +86,11 @@ func (r *ResourceGraphDefinitionReconciler) setupMicroController(
 	defaultSVCs map[string]string,
 	labeler metadata.Labeler,
 ) *instancectrl.Controller {
-
-	instanceLogger := r.rootLogger.WithName("controller." + gvr.Resource)
+	instanceLogger := r.instanceLogger.WithName(fmt.Sprintf("%s-controller", gvr.Resource)).WithValues(
+		"controller", gvr.Resource,
+		"controllerGroup", processedRGD.Instance.GetCRD().Spec.Group,
+		"controllerKind", processedRGD.Instance.GetCRD().Spec.Names.Kind,
+	)
 
 	return instancectrl.NewController(
 		instanceLogger,
