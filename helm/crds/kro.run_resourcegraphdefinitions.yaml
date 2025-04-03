@@ -73,6 +73,12 @@ spec:
                 description: The resources that are part of the resourcegraphdefinition.
                 items:
                   properties:
+                    dependsOn:
+                      description: DependsOn defines explicit dependencies on other
+                        resources
+                      items:
+                        type: string
+                      type: array
                     id:
                       type: string
                     includeWhen:
