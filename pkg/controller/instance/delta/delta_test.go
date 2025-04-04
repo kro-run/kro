@@ -458,3 +458,121 @@ func TestCompare_EmptyMaps(t *testing.T) {
 		})
 	}
 }
+
+func TestCompare_EmptyArraysAndNulls(t *testing.T) {
+	tests := []struct {
+		name     string
+		desired  *unstructured.Unstructured
+		observed *unstructured.Unstructured
+		wantDiff bool
+	}{
+		{
+			name: "empty array equals null in nested structure",
+			desired: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"template": map[string]interface{}{
+							"containers": []interface{}{
+								map[string]interface{}{
+									"env": []interface{}{},
+								},
+							},
+						},
+					},
+				},
+			},
+			observed: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"template": map[string]interface{}{
+							"containers": []interface{}{
+								map[string]interface{}{
+									"env": nil,
+								},
+							},
+						},
+					},
+				},
+			},
+			wantDiff: false,
+		},
+		{
+			name: "null equals empty array in nested structure",
+			desired: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"template": map[string]interface{}{
+							"containers": []interface{}{
+								map[string]interface{}{
+									"env": nil,
+								},
+							},
+						},
+					},
+				},
+			},
+			observed: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"template": map[string]interface{}{
+							"containers": []interface{}{
+								map[string]interface{}{
+									"env": []interface{}{},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantDiff: false,
+		},
+		{
+			name: "non-empty array differs from null",
+			desired: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"template": map[string]interface{}{
+							"containers": []interface{}{
+								map[string]interface{}{
+									"env": []interface{}{
+										map[string]interface{}{
+											"name":  "TEST",
+											"value": "value",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			observed: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"template": map[string]interface{}{
+							"containers": []interface{}{
+								map[string]interface{}{
+									"env": nil,
+								},
+							},
+						},
+					},
+				},
+			},
+			wantDiff: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			differences, err := Compare(tt.desired, tt.observed)
+			if err != nil {
+				t.Errorf("Compare() error = %v", err)
+				return
+			}
+			if (len(differences) > 0) != tt.wantDiff {
+				t.Errorf("Compare() got differences = %v, want diff = %v", differences, tt.wantDiff)
+			}
+		})
+	}
+}
