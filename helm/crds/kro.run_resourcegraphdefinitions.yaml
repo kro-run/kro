@@ -79,6 +79,10 @@ spec:
                       items:
                         type: string
                       type: array
+                    readOnly:
+                      description: ReadOnly indicates an external resource we want
+                        to read and use in the Graph
+                      type: boolean
                     readyWhen:
                       items:
                         type: string
