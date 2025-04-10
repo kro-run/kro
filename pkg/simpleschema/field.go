@@ -35,10 +35,7 @@ func parseFieldSchema(fieldSchema string) (string, []*Marker, error) {
 	}
 
 	// split the type and markers if possible
-	parts := strings.Split(fieldSchema, "|")
-	if len(parts) > 2 {
-		return "", nil, fmt.Errorf("invalid type: %s", fieldSchema)
-	}
+	parts := strings.SplitN(fieldSchema, "|", 2)
 
 	// trim spaces from the type
 	typ := strings.TrimSpace(parts[0])

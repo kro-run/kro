@@ -71,6 +71,15 @@ func TestParseFieldSchema(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name:        "array field with complex validation",
+			fieldSchema: "[]string | validation=\"self.all(x, startsWith(x, 'foo') || startsWith(x, 'bar'))\"",
+			wantType:    "[]string",
+			wantMarkers: []*Marker{
+				{MarkerType: MarkerTypeValidation, Key: "validation", Value: "self.all(x, startsWith(x, 'foo') || startsWith(x, 'bar'))"},
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
