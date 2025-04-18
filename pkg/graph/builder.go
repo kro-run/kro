@@ -334,6 +334,7 @@ func (b *Builder) buildRGResource(rgResource *v1alpha1.Resource, namespacedResou
 	// Note that at this point we don't inject the dependencies into the resource.
 	return &Resource{
 		id:                     rgResource.ID,
+		in:                     rgResource.In,
 		gvr:                    metadata.GVKtoGVR(gvk),
 		schema:                 resourceSchema,
 		emulatedObject:         emulatedResource,
@@ -384,6 +385,13 @@ func (b *Builder) buildDependencyGraph(
 	}
 
 	for _, resource := range resources {
+		if resource.in != "" {
+			if _, exists := resources[resource.in]; !exists {
+				return nil, fmt.Errorf("resource %s references non-existent cluster connection resource %s",
+					resource.id, resource.in)
+			}
+			resource.addDependencies(resource.in)
+		}
 		for _, resourceVariable := range resource.variables {
 			for _, expression := range resourceVariable.Expressions {
 				// We need to inspect the expression to understand how it relates to the
