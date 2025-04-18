@@ -233,6 +233,7 @@ func (in *ResourceInformation) DeepCopy() *ResourceInformation {
 func (in *Schema) DeepCopyInto(out *Schema) {
 	*out = *in
 	in.Spec.DeepCopyInto(&out.Spec)
+	in.Types.DeepCopyInto(&out.Types)
 	in.Status.DeepCopyInto(&out.Status)
 	if in.Validation != nil {
 		in, out := &in.Validation, &out.Validation
