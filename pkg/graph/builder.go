@@ -656,7 +656,8 @@ func dryRunExpression(env *cel.Env, expression string, resources map[string]*Res
 // is static or not.
 func extractDependencies(env *cel.Env, expression string, resourceNames []string) ([]string, bool, error) {
 	// We also want to allow users to refer to the instance spec in their expressions.
-	inspector := ast.NewInspectorWithEnv(env, resourceNames, nil)
+	knownFunctions := []string{"randomString"}
+	inspector := ast.NewInspectorWithEnv(env, resourceNames, knownFunctions)
 
 	// The CEL expression is valid if it refers to the resources defined in the
 	// resource graph definition.

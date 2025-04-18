@@ -534,6 +534,9 @@ func isInternalFunction(name string) bool {
 		"all":        true,
 		"exists":     true,
 		"exists_one": true,
+
+		// Custom Functions
+		"randomString": true,
 	}
 	return internalFunctions[name]
 }
