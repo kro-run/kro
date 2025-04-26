@@ -17,14 +17,15 @@ package commands
 import (
 	"fmt"
 
+	"github.com/kro-run/kro/cmd/kro/validator"
 	"github.com/spf13/cobra"
 )
 
 var validateCmd = &cobra.Command{
 	Use:   "validate",
 	Short: "Validate the ResourceGraphDefinition",
-	Long: `Validate the ResourceGraphDefinition. This command checks 
-	if the ResourceGraphDefinition is valid and can be used to create a ResourceGraph.`,
+	Long: `Validate the ResourceGraphDefinition. This command checks ` +
+		`if the ResourceGraphDefinition is valid and can be used to create a ResourceGraph.`,
 }
 
 var validateRGDCmd = &cobra.Command{
@@ -32,9 +33,22 @@ var validateRGDCmd = &cobra.Command{
 	Short: "Validate a ResourceGraphDefinition file",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// TODO(DhairyaMajmudar): Implement the logic to validate the ResourceGraphDefinition file
+		filePath := args[0]
+		validator := &validator.ResourceGraphDefinitionValidator{}
 
-		fmt.Println("Validation not implemented yet")
+		warnings, err := validator.ValidateFile(filePath)
+		if err != nil {
+			return fmt.Errorf("validation failed: %w", err)
+		}
+
+		if len(warnings) > 0 {
+			fmt.Println("Validation completed with warnings:")
+			for _, warning := range warnings {
+				fmt.Printf("- %s\n", warning)
+			}
+			return nil
+		}
+		fmt.Println("Validation successful! The ResourceGraphDefinition is valid.")
 		return nil
 	},
 }
