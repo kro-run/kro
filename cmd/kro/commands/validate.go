@@ -16,9 +16,13 @@ package commands
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/kro-run/kro/cmd/kro/validator"
 	"github.com/spf13/cobra"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 var validateCmd = &cobra.Command{
@@ -34,7 +38,30 @@ var validateRGDCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		filePath := args[0]
-		validator := &validator.ResourceGraphDefinitionValidator{}
+
+		config, err := rest.InClusterConfig()
+		if err != nil {
+			kubeconfigPath := cmd.Flag("kubeconfig").Value.String()
+			if kubeconfigPath == "" {
+				kubeconfigPath = os.Getenv("KUBECONFIG")
+			}
+			if kubeconfigPath == "" {
+				home, err := os.UserHomeDir()
+				if err == nil {
+					kubeconfigPath = filepath.Join(home, ".kube", "config")
+				}
+			}
+
+			config, err = clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+			if err != nil {
+				return fmt.Errorf("failed to get kubernetes config: %w", err)
+			}
+		}
+
+		validator, err := validator.NewResourceGraphDefinitionValidator(config)
+		if err != nil {
+			return fmt.Errorf("failed to create validator: %w", err)
+		}
 
 		warnings, err := validator.ValidateFile(filePath)
 		if err != nil {

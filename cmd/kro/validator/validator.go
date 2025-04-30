@@ -17,11 +17,26 @@ import (
 	"os"
 
 	"github.com/kro-run/kro/api/v1alpha1"
+	"github.com/kro-run/kro/pkg/graph"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/yaml"
 )
 
-type ResourceGraphDefinitionValidator struct{}
+type ResourceGraphDefinitionValidator struct {
+	builder *graph.Builder
+}
+
+func NewResourceGraphDefinitionValidator(config *rest.Config) (*ResourceGraphDefinitionValidator, error) {
+	builder, err := graph.NewBuilder(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create graph builder: %w", err)
+	}
+
+	return &ResourceGraphDefinitionValidator{
+		builder: builder,
+	}, nil
+}
 
 func (v *ResourceGraphDefinitionValidator) ValidateFile(filePath string) ([]string, error) {
 	data, err := os.ReadFile(filePath)
@@ -49,7 +64,6 @@ func (v *ResourceGraphDefinitionValidator) ValidateBytes(data []byte) ([]string,
 		return nil, err
 	}
 
-	// Validation checks
 	warnings := []string{}
 
 	// Schema checks
@@ -65,18 +79,11 @@ func (v *ResourceGraphDefinitionValidator) ValidateBytes(data []byte) ([]string,
 		warnings = append(warnings, "no resources defined in the ResourceGraphDefinition")
 	}
 
-	// Resource ID checks
-	resourceIDs := make(map[string]bool)
-	for i, res := range rgd.Spec.Resources {
-		if res.ID == "" {
-			warnings = append(warnings, fmt.Sprintf("resource %d does not have an ID", i))
-			continue
-		}
-
-		if resourceIDs[res.ID] {
-			warnings = append(warnings, fmt.Sprintf("duplicate resource ID found: %s", res.ID))
-		}
-		resourceIDs[res.ID] = true
+	// Deep validation checks using graph builder
+	_, err := v.builder.NewResourceGraphDefinition(rgd)
+	if err != nil {
+		warnings = append(warnings, fmt.Sprintf("deep validation failed: %v", err))
 	}
+
 	return warnings, nil
 }
