@@ -132,7 +132,7 @@ type ResourceGraphDefinitionStatus struct {
 	TopologicalOrder []string `json:"topologicalOrder,omitempty"`
 	// Conditions represent the latest available observations of an object's state
 	Conditions []Condition `json:"conditions,omitempty"`
-	// Resources represents the resources, and their information (dependencies for now)
+	// Resources represent resources and their information (dependencies for now)
 	Resources []ResourceInformation `json:"resources,omitempty"`
 }
 
