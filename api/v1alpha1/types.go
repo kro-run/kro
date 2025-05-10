@@ -14,6 +14,7 @@
 package v1alpha1
 
 import (
+	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
@@ -79,6 +80,14 @@ type Schema struct {
 	// Validation is a list of validation rules that are applied to the
 	// resourcegraphdefinition.
 	Validation []Validation `json:"validation,omitempty"`
+	// AdditionalPrinterColumns defines additional printer columns
+	// that will be passed down to the created CRD. If set, no
+	// default printer columns will be added to the created CRD,
+	// and if default printer columns need to be retained, they
+	// need to be added explicitly.
+	//
+	// +kubebuilder:validation:Optional
+	AdditionalPrinterColumns []extv1.CustomResourceColumnDefinition `json:"additionalPrinterColumns,omitempty"`
 }
 
 type Validation struct {

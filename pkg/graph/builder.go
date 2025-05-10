@@ -490,7 +490,7 @@ func (b *Builder) buildInstanceResource(
 
 	// Synthesize the CRD for the instance resource.
 	overrideStatusFields := true
-	instanceCRD := crd.SynthesizeCRD(group, apiVersion, kind, *instanceSpecSchema, *instanceStatusSchema, overrideStatusFields)
+	instanceCRD := crd.SynthesizeCRD(group, apiVersion, kind, *instanceSpecSchema, *instanceStatusSchema, overrideStatusFields, rgDefinition.AdditionalPrinterColumns)
 
 	// Emulate the CRD
 	instanceSchemaExt := instanceCRD.Spec.Versions[0].Schema.OpenAPIV3Schema
