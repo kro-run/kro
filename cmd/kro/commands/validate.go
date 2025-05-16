@@ -16,15 +16,20 @@ package commands
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
+	"github.com/kro-run/kro/cmd/kro/validator"
 	"github.com/spf13/cobra"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 var validateCmd = &cobra.Command{
 	Use:   "validate",
 	Short: "Validate the ResourceGraphDefinition",
-	Long: `Validate the ResourceGraphDefinition. This command checks 
-	if the ResourceGraphDefinition is valid and can be used to create a ResourceGraph.`,
+	Long: `Validate the ResourceGraphDefinition. This command checks ` +
+		`if the ResourceGraphDefinition is valid and can be used to create a ResourceGraph.`,
 }
 
 var validateRGDCmd = &cobra.Command{
@@ -32,9 +37,45 @@ var validateRGDCmd = &cobra.Command{
 	Short: "Validate a ResourceGraphDefinition file",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// TODO(DhairyaMajmudar): Implement the logic to validate the ResourceGraphDefinition file
+		filePath := args[0]
 
-		fmt.Println("Validation not implemented yet")
+		config, err := rest.InClusterConfig()
+		if err != nil {
+			kubeconfigPath := cmd.Flag("kubeconfig").Value.String()
+			if kubeconfigPath == "" {
+				kubeconfigPath = os.Getenv("KUBECONFIG")
+			}
+			if kubeconfigPath == "" {
+				home, err := os.UserHomeDir()
+				if err == nil {
+					kubeconfigPath = filepath.Join(home, ".kube", "config")
+				}
+			}
+
+			config, err = clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+			if err != nil {
+				return fmt.Errorf("failed to get kubernetes config: %w", err)
+			}
+		}
+
+		validator, err := validator.NewResourceGraphDefinitionValidator(config)
+		if err != nil {
+			return fmt.Errorf("failed to create validator: %w", err)
+		}
+
+		warnings, err := validator.ValidateFile(filePath)
+		if err != nil {
+			return fmt.Errorf("validation failed: %w", err)
+		}
+
+		if len(warnings) > 0 {
+			fmt.Println("Validation completed with warnings:")
+			for _, warning := range warnings {
+				fmt.Printf("- %s\n", warning)
+			}
+			return nil
+		}
+		fmt.Println("Validation successful! The ResourceGraphDefinition is valid.")
 		return nil
 	},
 }
