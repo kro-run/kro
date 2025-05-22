@@ -1,160 +1,113 @@
-/*
-Copyright 2022 The Kubernetes Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+// Copyright 2025 The Kube Resource Orchestrator Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package applyset
 
 import (
+	"errors"
+	"fmt"
+
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/klog/v2"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
-type HealthInfo struct {
-	IsHealthy bool
-	Message   string
-	Error     error
+type AppliedObject struct {
+	ApplyableObject
+	LastApplied *unstructured.Unstructured
+	Error       error
+	Message     string
 }
 
-type ApplyInfo struct {
-	IsPruned bool
-	Message  string
-	Error    error
-}
-
-type ObjectStatus struct {
-	GVK           schema.GroupVersionKind
-	NameNamespace types.NamespacedName
-	Apply         ApplyInfo
-	Health        HealthInfo
-	LastApplied   *unstructured.Unstructured
-}
-
-// ApplyResults contains the results of an Apply operation.
-type ApplyResults struct {
-	total             int
-	applySuccessCount int
-	applyFailCount    int
-	pruneSuccessCount int
-	pruneFailCount    int
-	healthyCount      int
-	unhealthyCount    int
-	Objects           []ObjectStatus
-}
-
-// AllApplied is true if the desired state has been successfully applied for all objects.
-// Note: you likely also want to check AllHealthy, if you want to be sure the objects are "ready".
-func (r *ApplyResults) AllApplied() bool {
-	r.checkInvariants()
-
-	return r.applyFailCount == 0 && r.pruneFailCount == 0
-}
-
-// AllHealthy is true if all the objects have been applied and have converged to a "ready" state.
-// Note that this is only meaningful if AllApplied is true.
-func (r *ApplyResults) AllHealthy() bool {
-	r.checkInvariants()
-
-	return r.unhealthyCount == 0
-}
-
-// checkInvariants is an internal function that warns if the object doesn't match the expected invariants.
-func (r *ApplyResults) checkInvariants() {
-	if r.total != (r.applySuccessCount + r.applyFailCount) {
-		klog.Warningf("consistency error (apply counts): %#v", r)
-	} else if r.total != (r.healthyCount + r.unhealthyCount) {
-		// This "invariant" only holds when all objects could be applied
-		klog.Warningf("consistency error (healthy counts): %#v", r)
+func (ao *AppliedObject) HasClusterMutation() bool {
+	// If there was an error applying, we consider the object to have not changed.
+	if ao.Error != nil {
+		return false
 	}
-}
 
-// applyError records that the apply of an object failed with an error.
-func (r *ApplyResults) applyError(gvk schema.GroupVersionKind, nn types.NamespacedName, err error) {
-	r.applyFailCount++
-	r.Objects = append(r.Objects, ObjectStatus{
-		GVK:           gvk,
-		NameNamespace: nn,
-		Health: HealthInfo{
-			IsHealthy: false,
-		},
-		Apply: ApplyInfo{
-			IsPruned: false,
-			Message:  "Apply Error",
-			Error:    err,
-		},
-	})
-	klog.Warningf("error from apply on %s %s: %v", gvk, nn, err)
-}
-
-// applySuccess records that an object was applied and this succeeded.
-func (r *ApplyResults) applySuccess(gvk schema.GroupVersionKind, nn types.NamespacedName) {
-	r.applySuccessCount++
-}
-
-// pruneError records that the prune of an object failed with an error.
-func (r *ApplyResults) pruneError(gvk schema.GroupVersionKind, nn types.NamespacedName, err error) {
-	r.Objects = append(r.Objects, ObjectStatus{
-		GVK:           gvk,
-		NameNamespace: nn,
-		Health: HealthInfo{
-			IsHealthy: true,
-		},
-		Apply: ApplyInfo{
-			IsPruned: true,
-			Message:  "Prune Error",
-			Error:    err,
-		},
-	})
-	r.pruneFailCount++
-	klog.Warningf("error from pruning on %s %s: %v", gvk, nn, err)
-}
-
-// pruneSuccess records that an object was pruned and this succeeded.
-func (r *ApplyResults) pruneSuccess(gvk schema.GroupVersionKind, nn types.NamespacedName) {
-	r.Objects = append(r.Objects, ObjectStatus{
-		GVK:           gvk,
-		NameNamespace: nn,
-		Health: HealthInfo{
-			IsHealthy: true,
-		},
-		Apply: ApplyInfo{
-			IsPruned: true,
-		},
-	})
-	r.pruneSuccessCount++
-}
-
-// reportHealth records the health of an object.
-func (r *ApplyResults) reportHealth(gvk schema.GroupVersionKind, nn types.NamespacedName, lastApplied *unstructured.Unstructured, isHealthy bool, message string, err error) {
-	r.Objects = append(r.Objects, ObjectStatus{
-		GVK:           gvk,
-		NameNamespace: nn,
-		Health: HealthInfo{
-			IsHealthy: isHealthy,
-			Message:   message,
-			Error:     err,
-		},
-		Apply: ApplyInfo{
-			IsPruned: false,
-		},
-		LastApplied: lastApplied,
-	})
-	if isHealthy {
-		r.healthyCount++
-	} else {
-		r.unhealthyCount++
+	// If the object was not applied, we consider it to have not changed.
+	if ao.LastApplied == nil {
+		return false
 	}
+
+	return ao.lastReadRevision != ao.LastApplied.GetResourceVersion()
+}
+
+type PrunedObject struct {
+	PruneObject
+	Error error
+}
+
+type ApplyResult struct {
+	Desired        int
+	AppliedObjects []AppliedObject
+	PrunedObjects  []PrunedObject
+}
+
+func (a *ApplyResult) PruneErrors() error {
+	errorsSeen := []error{}
+	for _, pruned := range a.PrunedObjects {
+		if pruned.Error != nil {
+			errorsSeen = append(errorsSeen, pruned.Error)
+		}
+	}
+	return errors.Join(errorsSeen...)
+}
+
+func (a *ApplyResult) ApplyErrors() error {
+	errorsSeen := []error{}
+	if len(a.AppliedObjects) != a.Desired {
+		errorsSeen = append(errorsSeen, fmt.Errorf("expected %d applied objects, got %d", a.Desired, len(a.AppliedObjects)))
+	}
+	for _, applied := range a.AppliedObjects {
+		if applied.Error != nil {
+			errorsSeen = append(errorsSeen, applied.Error)
+		}
+	}
+	return errors.Join(errorsSeen...)
+}
+
+func (a *ApplyResult) AppliedUIDs() sets.Set[types.UID] {
+	uids := sets.New[types.UID]()
+	for _, applied := range a.AppliedObjects {
+		if applied.Error != nil {
+			continue
+		}
+		uids.Insert(applied.LastApplied.GetUID())
+	}
+	return uids
+}
+
+func (a *ApplyResult) HasClusterMutation() bool {
+	for _, applied := range a.AppliedObjects {
+		if applied.HasClusterMutation() {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *ApplyResult) recordApplied(
+	obj ApplyableObject,
+	lastApplied *unstructured.Unstructured,
+	err error,
+) AppliedObject {
+	ao := AppliedObject{
+		ApplyableObject: obj,
+		LastApplied:     lastApplied,
+		Error:           err,
+	}
+	a.AppliedObjects = append(a.AppliedObjects, ao)
+	return ao
 }
