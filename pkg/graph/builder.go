@@ -15,6 +15,7 @@
 package graph
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 
@@ -141,6 +142,9 @@ func (b *Builder) NewResourceGraphDefinition(originalCR *v1alpha1.ResourceGraphD
 		}
 	}
 
+	// We want to evaluate everything and return all errs
+	errs := []error{}
+
 	// we'll also store the resources in a map for easy access later.
 	resources := make(map[string]*Resource)
 	for i, rgResource := range rgd.Spec.Resources {
@@ -148,12 +152,15 @@ func (b *Builder) NewResourceGraphDefinition(originalCR *v1alpha1.ResourceGraphD
 		order := i
 		r, err := b.buildRGResource(rgResource, namespacedResources, order)
 		if err != nil {
-			return nil, fmt.Errorf("failed to build resource %q: %w", id, err)
+			errs = append(errs, fmt.Errorf("failed to build resource %q: %w", id, err))
 		}
 		if resources[id] != nil {
-			return nil, fmt.Errorf("found resources with duplicate id %q", id)
+			errs = append(errs, fmt.Errorf("found resources with duplicate id %q", id))
 		}
 		resources[id] = r
+	}
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
 	}
 
 	// At this stage we have a superficial understanding of the resources that are
@@ -410,6 +417,7 @@ func (b *Builder) buildDependencyGraph(
 		}
 	}
 
+	errs := []error{}
 	for _, resource := range resources {
 		for _, resourceVariable := range resource.variables {
 			for _, expression := range resourceVariable.Expressions {
@@ -417,13 +425,15 @@ func (b *Builder) buildDependencyGraph(
 				// resources defined in the resource graph definition.
 				err := validateCELExpressionContext(env, expression, resourceNames)
 				if err != nil {
-					return nil, fmt.Errorf("failed to validate expression context: %w", err)
+					errs = append(errs, fmt.Errorf("failed to validate expression context: %w", err))
+					continue
 				}
 
 				// We need to extract the dependencies from the expression.
 				resourceDependencies, isStatic, err := extractDependencies(env, expression, resourceNames)
 				if err != nil {
-					return nil, fmt.Errorf("failed to extract dependencies: %w", err)
+					errs = append(errs, fmt.Errorf("failed to extract dependencies: %w", err))
+					continue
 				}
 
 				// Static until proven dynamic.
@@ -438,10 +448,14 @@ func (b *Builder) buildDependencyGraph(
 				resourceVariable.AddDependencies(resourceDependencies...)
 				// We need to add the dependencies to the graph.
 				if err := directedAcyclicGraph.AddDependencies(resource.id, resourceDependencies); err != nil {
-					return nil, err
+					errs = append(errs, err)
 				}
 			}
 		}
+	}
+
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
 	}
 
 	return directedAcyclicGraph, nil
@@ -510,6 +524,7 @@ func (b *Builder) buildInstanceResource(
 		emulatedObject: emulatedInstance,
 	}
 
+	errs := []error{}
 	instanceStatusVariables := []*variable.ResourceField{}
 	for _, statusVariable := range statusVariables {
 		// These variables need to be injected into the status field of the instance.
@@ -518,10 +533,10 @@ func (b *Builder) buildInstanceResource(
 
 		instanceDependencies, isStatic, err := extractDependencies(env, statusVariable.Expressions[0], resourceNames)
 		if err != nil {
-			return nil, fmt.Errorf("failed to extract dependencies: %w", err)
+			errs = append(errs, fmt.Errorf("failed to extract dependencies: %w", err))
 		}
 		if isStatic {
-			return nil, fmt.Errorf("instance status field must refer to a resource: %s", statusVariable.Path)
+			errs = append(errs, fmt.Errorf("instance status field must refer to a resource: %s", statusVariable.Path))
 		}
 		instance.addDependencies(instanceDependencies...)
 
@@ -530,6 +545,9 @@ func (b *Builder) buildInstanceResource(
 			Kind:            variable.ResourceVariableKindDynamic,
 			Dependencies:    instanceDependencies,
 		})
+	}
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
 	}
 
 	instance.variables = instanceStatusVariables
