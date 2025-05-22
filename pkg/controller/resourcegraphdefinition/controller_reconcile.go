@@ -34,7 +34,10 @@ import (
 // 1. Processing the resource graph
 // 2. Ensuring CRDs are present
 // 3. Setting up and starting the microcontroller
-func (r *ResourceGraphDefinitionReconciler) reconcileResourceGraphDefinition(ctx context.Context, rgd *v1alpha1.ResourceGraphDefinition) ([]string, []v1alpha1.ResourceInformation, error) {
+func (r *ResourceGraphDefinitionReconciler) reconcileResourceGraphDefinition(
+	ctx context.Context,
+	rgd *v1alpha1.ResourceGraphDefinition,
+) ([]string, []v1alpha1.ResourceInformation, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	// Process resource graph definition graph first to validate structure
@@ -75,7 +78,9 @@ func (r *ResourceGraphDefinitionReconciler) reconcileResourceGraphDefinition(ctx
 }
 
 // setupLabeler creates and merges the required labelers for the resource graph definition
-func (r *ResourceGraphDefinitionReconciler) setupLabeler(rgd *v1alpha1.ResourceGraphDefinition) (metadata.Labeler, error) {
+func (r *ResourceGraphDefinitionReconciler) setupLabeler(
+	rgd *v1alpha1.ResourceGraphDefinition,
+) (metadata.Labeler, error) {
 	rgLabeler := metadata.NewResourceGraphDefinitionLabeler(rgd)
 	return r.metadataLabeler.Merge(rgLabeler)
 }
@@ -103,6 +108,7 @@ func (r *ResourceGraphDefinitionReconciler) setupMicroController(
 		gvr,
 		processedRGD,
 		r.clientSet,
+		r.restMapper,
 		defaultSVCs,
 		labeler,
 	)
@@ -110,7 +116,10 @@ func (r *ResourceGraphDefinitionReconciler) setupMicroController(
 
 // reconcileResourceGraphDefinitionGraph processes the resource graph definition to build a dependency graph
 // and extract resource information
-func (r *ResourceGraphDefinitionReconciler) reconcileResourceGraphDefinitionGraph(_ context.Context, rgd *v1alpha1.ResourceGraphDefinition) (*graph.Graph, []v1alpha1.ResourceInformation, error) {
+func (r *ResourceGraphDefinitionReconciler) reconcileResourceGraphDefinitionGraph(
+	_ context.Context,
+	rgd *v1alpha1.ResourceGraphDefinition,
+) (*graph.Graph, []v1alpha1.ResourceInformation, error) {
 	processedRGD, err := r.rgBuilder.NewResourceGraphDefinition(rgd)
 	if err != nil {
 		return nil, nil, newGraphError(err)
@@ -140,7 +149,10 @@ func buildResourceInfo(name string, deps []string) v1alpha1.ResourceInformation 
 }
 
 // reconcileResourceGraphDefinitionCRD ensures the CRD is present and up to date in the cluster
-func (r *ResourceGraphDefinitionReconciler) reconcileResourceGraphDefinitionCRD(ctx context.Context, crd *v1.CustomResourceDefinition) error {
+func (r *ResourceGraphDefinitionReconciler) reconcileResourceGraphDefinitionCRD(
+	ctx context.Context,
+	crd *v1.CustomResourceDefinition,
+) error {
 	if err := r.crdManager.Ensure(ctx, *crd); err != nil {
 		return newCRDError(err)
 	}
@@ -148,7 +160,11 @@ func (r *ResourceGraphDefinitionReconciler) reconcileResourceGraphDefinitionCRD(
 }
 
 // reconcileResourceGraphDefinitionMicroController starts the microcontroller for handling the resources
-func (r *ResourceGraphDefinitionReconciler) reconcileResourceGraphDefinitionMicroController(ctx context.Context, gvr *schema.GroupVersionResource, handler dynamiccontroller.Handler) error {
+func (r *ResourceGraphDefinitionReconciler) reconcileResourceGraphDefinitionMicroController(
+	ctx context.Context,
+	gvr *schema.GroupVersionResource,
+	handler dynamiccontroller.Handler,
+) error {
 	err := r.dynamicController.StartServingGVK(ctx, *gvr, handler)
 	if err != nil {
 		return newMicroControllerError(err)
