@@ -41,10 +41,17 @@ const (
 	InstanceLabel          = LabelKROPrefix + "instance-name"
 	InstanceNamespaceLabel = LabelKROPrefix + "instance-namespace"
 
+	// Parent Identifier Labels. These are set by the instance reconciler that creates/updates the resource.
 	ResourceGraphDefinitionIDLabel        = LabelKROPrefix + "resource-graph-definition-id"
 	ResourceGraphDefinitionNameLabel      = LabelKROPrefix + "resource-graph-definition-name"
 	ResourceGraphDefinitionNamespaceLabel = LabelKROPrefix + "resource-graph-definition-namespace"
 	ResourceGraphDefinitionVersionLabel   = LabelKROPrefix + "resource-graph-definition-version"
+
+	// Source Identifier Labels. These are set by the instance reconciler that reconciles the resource.
+	SourceResourceGraphDefinitionIDLabel        = LabelKROPrefix + "source-resource-graph-definition-id"
+	SourceResourceGraphDefinitionNameLabel      = LabelKROPrefix + "source-resource-graph-definition-name"
+	SourceResourceGraphDefinitionNamespaceLabel = LabelKROPrefix + "source-resource-graph-definition-namespace"
+	SourceResourceGraphDefinitionVersionLabel   = LabelKROPrefix + "source-resource-graph-definition-version"
 )
 
 // IsKROOwned returns true if the resource is owned by KRO.
@@ -121,6 +128,15 @@ func NewResourceGraphDefinitionLabeler(rgMeta metav1.Object) GenericLabeler {
 	return map[string]string{
 		ResourceGraphDefinitionIDLabel:   string(rgMeta.GetUID()),
 		ResourceGraphDefinitionNameLabel: rgMeta.GetName(),
+	}
+}
+
+// NewResourceGraphDefinitionSourceLabeler returns a new labeler that sets the
+// SourceResourceGraphDefinitionLabel and SourceResourceGraphDefinitionIDLabel labels on a resource.
+func NewResourceGraphDefinitionSourceLabeler(rgMeta metav1.Object) GenericLabeler {
+	return map[string]string{
+		SourceResourceGraphDefinitionIDLabel:   string(rgMeta.GetUID()),
+		SourceResourceGraphDefinitionNameLabel: rgMeta.GetName(),
 	}
 }
 
