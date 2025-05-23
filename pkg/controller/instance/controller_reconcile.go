@@ -17,6 +17,7 @@ package instance
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -248,6 +249,15 @@ func (igr *instanceGraphReconciler) handleResourceCreation(
 ) error {
 	igr.log.V(1).Info("Creating new resource", "resourceID", resourceID)
 
+	// Check if label propagation is enabled
+	annotations, found := igr.runtime.GetInstance().Object["metadata"].(map[string]interface{})["annotations"].(map[string]interface{})
+	if found {
+		if val, ok := annotations["kro.run/propagate-labels"]; ok && val == "true" {
+			igr.log.V(1).Info("Found propage labels annotation")
+			igr.propagateLabelsToResource(resource)
+		}
+	}
+
 	// Apply labels and create resource
 	igr.instanceSubResourcesLabeler.ApplyLabels(resource)
 	if _, err := rc.Create(ctx, resource, metav1.CreateOptions{}); err != nil {
@@ -258,6 +268,33 @@ func (igr *instanceGraphReconciler) handleResourceCreation(
 
 	resourceState.State = ResourceStateCreated
 	return igr.delayedRequeue(fmt.Errorf("awaiting resource creation completion"))
+}
+
+func (igr *instanceGraphReconciler) propagateLabelsToResource(resource *unstructured.Unstructured) {
+	// Get labels from the RGI
+	rgiLabels, found := igr.runtime.GetInstance().Object["metadata"].(map[string]interface{})["labels"].(map[string]interface{})
+
+	if !found {
+		igr.log.V(1).Info("No user labels found on the RGI for propagation")
+		return
+	}
+
+	userLabels := filterUserLabels(rgiLabels)
+	unstructured.SetNestedStringMap(resource.Object, userLabels, "metadata", "labels")
+	igr.log.V(1).Info("User labels propagated to resource")
+}
+
+// filterUserLabels extracts non-"kro.run/" labels
+func filterUserLabels(labels map[string]interface{}) map[string]string {
+	userLabels := make(map[string]string)
+	for key, value := range labels {
+		if !strings.HasPrefix(key, "kro.run/") {
+			if strValue, ok := value.(string); ok {
+				userLabels[key] = strValue
+			}
+		}
+	}
+	return userLabels
 }
 
 // updateResource handles updates to an existing resource, comparing the desired
