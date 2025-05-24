@@ -23,7 +23,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 
 	"github.com/kro-run/kro/pkg/controller/instance/delta"
@@ -141,7 +140,7 @@ func (igr *instanceGraphReconciler) reconcileInstance(ctx context.Context) error
 // setupInstance prepares an instance for reconciliation by setting up necessary
 // labels and managed state.
 func (igr *instanceGraphReconciler) setupInstance(ctx context.Context, instance *unstructured.Unstructured) error {
-	patched, err := igr.setManaged(ctx, instance, instance.GetUID())
+	patched, err := igr.setManaged(ctx, instance)
 	if err != nil {
 		return err
 	}
@@ -439,7 +438,7 @@ func (igr *instanceGraphReconciler) finalizeDeletion(ctx context.Context) error 
 }
 
 // setManaged ensures the instance has the necessary finalizer and labels.
-func (igr *instanceGraphReconciler) setManaged(ctx context.Context, obj *unstructured.Unstructured, uid types.UID) (*unstructured.Unstructured, error) {
+func (igr *instanceGraphReconciler) setManaged(ctx context.Context, obj *unstructured.Unstructured) (*unstructured.Unstructured, error) {
 	if exist, _ := metadata.HasInstanceFinalizerUnstructured(obj); exist {
 		return obj, nil
 	}
