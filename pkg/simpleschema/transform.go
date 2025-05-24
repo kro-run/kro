@@ -112,7 +112,7 @@ func (tf *transformer) parseFieldSchema(key, fieldValue string, parentSchema *ex
 	fieldJSONSchemaProps := &extv1.JSONSchemaProps{}
 
 	if isAtomicType(fieldType) {
-		fieldJSONSchemaProps.Type = string(fieldType)
+		fieldJSONSchemaProps.Type = fieldType
 	} else if isCollectionType(fieldType) {
 		if isMapType(fieldType) {
 			fieldJSONSchemaProps, err = tf.handleMapType(key, fieldType)
@@ -147,7 +147,7 @@ func (tf *transformer) handleMapType(key, fieldType string) (*extv1.JSONSchemaPr
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse map type for %s: %w", key, err)
 	}
-	if keyType != "string" {
+	if keyType != "string" { //nolint:goconst
 		return nil, fmt.Errorf("unsupported key type for maps: %s", keyType)
 	}
 
