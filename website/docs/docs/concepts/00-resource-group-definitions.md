@@ -21,7 +21,7 @@ defining:
 - What status to expose (status)
 
 When you create a **ResourceGraphDefinition**, kro generates a new API (a.k.a Custom
-Resource Defintion) in your cluster that others can use to deploy resources in a
+Resource Definition) in your cluster that others can use to deploy resources in a
 consistent, controlled way.
 
 ## Anatomy of a ResourceGraphDefinition
@@ -126,7 +126,7 @@ correctness and set up the necessary components:
    - Validates your schema definition follows the simple schema format
    - Ensures all resource templates are valid Kubernetes manifests
    - Checks that referenced values exist and are of the correct type
-   - Confirms resource dependencies form a valid Directed Acycled Graph(DAG)
+   - Confirms resource dependencies form a valid Directed Acyclic Graph(DAG)
      without cycles
    - Validates all CEL expressions in status fields and conditions
 
@@ -158,7 +158,7 @@ its behavior accordingly.
 ## ResourceGraphDefinition Instance Example
 
 After the **ResourceGraphDefinition** is validated and registered in the cluster, users
-can can create instances of it. Here's an example of how an instance for the
+can create instances of it. Here's an example of how an instance for the
 `WebApplication` might look:
 
 ```yaml title="my-web-app-instance.yaml"
@@ -198,4 +198,4 @@ resources:
        namespace: # optional, if empty uses instance namespace
 ```
 
-As part of the processing the Resource Graph, the instance reconciler waits for the `externalRef` object to be present and reads the object from the cluster as a node in the graph. Subsequent resources can use data from this node.
+As part of processing the Resource Graph, the instance reconciler waits for the `externalRef` object to be present and reads the object from the cluster as a node in the graph. Subsequent resources can use data from this node.

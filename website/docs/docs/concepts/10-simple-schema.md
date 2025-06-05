@@ -118,7 +118,7 @@ metrics: "map[string]float"
 ### Custom Types
 
 Custom types are specified in the separate `types` section.
-They provide a map of names to type specifications, that follow the simple schema.
+They provide a map of names to type specifications that follow the simple schema.
 
 Example:
 
