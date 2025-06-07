@@ -59,8 +59,8 @@ func NewRootCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.KubeConfigPath, "kubeconfig", opts.KubeConfigPath, "Path to kubeconfig file")
 	cmd.PersistentFlags().StringVar(&opts.Context, "context", "", "Kubernetes context to use")
 	cmd.PersistentFlags().BoolVar(&opts.Verbose, "verbose", false, "Enable verbose logging")
-
 	// TODO: Command groups
 	commands.AddValidateCommands(cmd)
+	commands.AddCreateCommands(cmd)
 	return cmd
 }
