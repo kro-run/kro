@@ -89,10 +89,10 @@ func (igr *instanceGraphReconciler) reconcile(ctx context.Context) error {
 }
 
 // handleReconciliation provides a common wrapper for reconciliation operations,
-// handling status updates and error management.
+// handling status updates, and error management.
 func (igr *instanceGraphReconciler) handleReconciliation(ctx context.Context, reconcileFunc func(context.Context) error) error {
 	defer func() {
-		// Update instance state based on reconciliation result
+		// Update instance state based on a reconciliation result
 		igr.updateInstanceState()
 
 		// Prepare and patch status
@@ -516,7 +516,7 @@ func (igr *instanceGraphReconciler) getResourceNamespace(resourceID string) stri
 		return ns
 	}
 
-	// Finally fall back to default namespace
+	// Finally, fall back to default namespace
 	igr.log.V(2).Info("Using default namespace",
 		"resourceID", resourceID,
 		"namespace", metav1.NamespaceDefault)
