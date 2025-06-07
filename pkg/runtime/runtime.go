@@ -15,6 +15,7 @@
 package runtime
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -46,6 +47,7 @@ func NewResourceGraphDefinitionRuntime(
 	instance Resource,
 	resources map[string]Resource,
 	topologicalOrder []string,
+	iterators []Iterator,
 ) (*ResourceGraphDefinitionRuntime, error) {
 	r := &ResourceGraphDefinitionRuntime{
 		instance:                     instance,
@@ -55,6 +57,7 @@ func NewResourceGraphDefinitionRuntime(
 		runtimeVariables:             make(map[string][]*expressionEvaluationState),
 		expressionsCache:             make(map[string]*expressionEvaluationState),
 		ignoredByConditionsResources: make(map[string]bool),
+		iterators:                    iterators,
 	}
 	// make sure to copy the variables and the dependencies, to avoid
 	// modifying the original resource.
@@ -111,12 +114,26 @@ func NewResourceGraphDefinitionRuntime(
 		}
 	}
 
+	// register iterators placeholders in the expressions cache
+	for _, it := range iterators {
+		key := "iterators." + it.Name
+		r.expressionsCache[key] = &expressionEvaluationState{
+			Expression: key,
+			Kind:       variable.ResourceVariableKindIterator,
+		}
+	}
+
 	// Evaluate the static variables, so that the caller only needs to call Synchronize
 	// whenever a new resource is added or a variable is updated.
 	err := r.evaluateStaticVariables()
 	if err != nil {
 		return nil, fmt.Errorf("failed to evaluate static variables: %w", err)
 	}
+
+	if err := r.evaluateIterators(); err != nil {
+		return nil, fmt.Errorf("failed to evaluate iterators: %w", err)
+	}
+
 	err = r.propagateResourceVariables()
 	if err != nil {
 		return nil, fmt.Errorf("failed to propagate resource variables: %w", err)
@@ -160,6 +177,10 @@ type ResourceGraphDefinitionRuntime struct {
 	// is updated here, it will be updated in the runtimeVariables as well, and
 	// vice versa.
 	expressionsCache map[string]*expressionEvaluationState
+
+	// iterators holds the iterator definitions used to produce values for
+	// `${iterators.<name>}` expressions.
+	iterators []Iterator
 
 	// topologicalOrder holds the dependency order of resources. This order
 	// ensures that resources are processed in a way that respects their
@@ -326,6 +347,107 @@ func (rt *ResourceGraphDefinitionRuntime) evaluateStaticVariables() error {
 		}
 	}
 	return nil
+}
+
+// evaluateIterators resolves all iterator definitions and stores the results in the expressions cache.
+//
+// Iterators are defined at graph build time and provide a loop mechanism that
+// produces values used later during expression evaluation. Each iterator has:
+//   - an input CEL expression that must resolve to a list using only instance data,
+//   - a loop variable name bound to each element of that list
+//   - a render object that may contain CEL expressions referencing the loop
+//     variable.
+//
+// This function executes the CEL expression for each iterator, loops over the
+// resulting items and renders the template for every element. The expanded list
+// is then cached as `${iterators.<name>}` so other expressions can reference it
+func (rt *ResourceGraphDefinitionRuntime) evaluateIterators() error {
+	if len(rt.iterators) == 0 {
+		return nil
+	}
+	for _, it := range rt.iterators {
+		// Evaluate the iterator's input expression using only the schema (instance) data
+		// The resulting value must be a list that will drive the loop
+		envIn, err := krocel.DefaultEnvironment(krocel.WithResourceIDs([]string{"schema"}))
+		if err != nil {
+			return err
+		}
+		ctxIn := map[string]interface{}{"schema": rt.instance.Unstructured().Object}
+		v, err := evaluateExpression(envIn, ctxIn, it.Input)
+		if err != nil {
+			return err
+		}
+		list, ok := v.([]interface{})
+		if !ok {
+			return fmt.Errorf("iterators %s input must evaluate to list", it.Name)
+		}
+
+		// Render the template for each element of the input list
+		results := make([]interface{}, 0, len(list))
+		for _, item := range list {
+			// Each iteration evaluates expressions with two variables available:
+			// the current item bound to the iterator variable, and the instance schema
+			envItem, err := krocel.DefaultEnvironment(krocel.WithResourceIDs([]string{it.IterVar, "schema"}))
+			if err != nil {
+				return err
+			}
+			ctx := map[string]interface{}{it.IterVar: item, "schema": rt.instance.Unstructured().Object}
+			// Create a deep copy of the render object because it will be mutated by the resolver for every item
+			renderCopy := deepCopyInterface(it.Render)
+
+			exprValues := map[string]interface{}{}
+			for _, fd := range it.Variables {
+				for _, expr := range fd.Expressions {
+					val, err := evaluateExpression(envItem, ctx, expr)
+					if err != nil {
+						return err
+					}
+					exprValues[expr] = val
+				}
+			}
+
+			wrapper := map[string]interface{}{"root": renderCopy}
+			fields := make([]variable.FieldDescriptor, len(it.Variables))
+			for i, fd := range it.Variables {
+				p := "root"
+				if fd.Path != "" {
+					if strings.HasPrefix(fd.Path, "[") {
+						p += fd.Path
+					} else {
+						p += "." + fd.Path
+					}
+				}
+				fields[i] = fd
+				fields[i].Path = p
+			}
+			// Add the evaluated values into the render template
+			rs := resolver.NewResolver(wrapper, exprValues)
+			sum := rs.Resolve(fields)
+			if len(sum.Errors) > 0 {
+				return fmt.Errorf("iterator %s render resolution failed", it.Name)
+			}
+			if sliceVal, ok := wrapper["root"].([]interface{}); ok {
+				results = append(results, sliceVal...)
+			} else {
+				results = append(results, wrapper["root"])
+			}
+		}
+		// Cache the fully rendered list for later use by expressions referencing `${iterators.<name>}`
+		key := "iterators." + it.Name
+		state := rt.expressionsCache[key]
+		state.Resolved = true
+		state.ResolvedValue = results
+	}
+	return nil
+}
+
+// deepCopyInterface performs a deep copy on an arbitrary object
+// It is used when rendering iterator templates to ensure the original Render object is not mutated during resolution
+func deepCopyInterface(in interface{}) interface{} {
+	b, _ := json.Marshal(in)
+	var out interface{}
+	json.Unmarshal(b, &out)
+	return out
 }
 
 type EvalError struct {
