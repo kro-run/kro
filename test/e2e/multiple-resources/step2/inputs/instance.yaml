@@ -6,5 +6,6 @@ spec:
   name: test-app
   image: nginx:1.25
   minReplicas: 1
-  maxReplicas: 5 
-  targetCPUUtilization: 20  
+  maxReplicas: 5
+  targetCPUUtilization: 20
+

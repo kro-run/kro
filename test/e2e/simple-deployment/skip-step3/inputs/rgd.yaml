@@ -7,8 +7,8 @@ spec:
     apiVersion: v1alpha1
     kind: SimpleDeployment
     spec:
-      replicas: integer | 1
-      image: string | "nginx:latest"
+      replicas: integer | default=1
+      image: string | default="nginx:latest"
   resources:
     - id: deployment
       template:
@@ -30,3 +30,4 @@ spec:
                 - name: main
                   image: ${schema.spec.image} 
                   env: []
+

@@ -28,6 +28,7 @@ spec:
     - description: kro controller pod logs collector
       podLogs:
         selector: app.kubernetes.io/instance=kro
+        namespace: kro-system
     finally:
     - description: sleep operation
       sleep:
@@ -48,6 +49,7 @@ spec:
     - description: kro controller pod logs collector
       podLogs:
         selector: app.kubernetes.io/instance=kro
+        namespace: kro-system
     finally:
     - description: sleep operation
       sleep:
@@ -65,12 +67,9 @@ spec:
     - description: kro controller pod logs collector
       podLogs:
         selector: app.kubernetes.io/instance=kro
+        namespace: kro-system
     finally:
     - description: sleep operation
       sleep:
         duration: 5s
-
-
-
-
 

@@ -7,11 +7,11 @@ spec:
     apiVersion: v1alpha1
     kind: AutoscaledDeployment
     spec:
-      name: string | "some-app"
-      image: string | "nginx:latest"
-      minReplicas: integer | 1
-      maxReplicas: integer | 10
-      targetCPUUtilization: integer | 80
+      name: string | default="some-app"
+      image: string | default="nginx:latest"
+      minReplicas: integer | default=1
+      maxReplicas: integer | default=10
+      targetCPUUtilization: integer | default=80
   resources:
     - id: configmap
       template:
@@ -85,3 +85,4 @@ spec:
                 target:
                   type: Utilization
                   averageUtilization: ${schema.spec.targetCPUUtilization} 
+

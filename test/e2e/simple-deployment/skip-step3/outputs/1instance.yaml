@@ -18,3 +18,4 @@ status:
     status: "True"
     type: InstanceSynced
   state: ACTIVE
+

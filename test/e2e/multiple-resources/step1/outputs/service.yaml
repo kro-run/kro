@@ -13,3 +13,4 @@ spec:
     targetPort: http
   selector:
     app: test-app-deployment
+

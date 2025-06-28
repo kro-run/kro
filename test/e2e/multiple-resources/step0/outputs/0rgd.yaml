@@ -22,3 +22,4 @@ status:
   - service
   - deployment
   - autoscaler
+

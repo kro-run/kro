@@ -8,3 +8,4 @@ spec:
   minReplicas: 2
   maxReplicas: 5 
   targetCPUUtilization: 20  
+
