@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -41,9 +42,12 @@ type Applyable interface {
 	json.Marshaler
 }
 type ApplyableObject struct {
-	Applyable
+	*unstructured.Unstructured
 
+	// Optional
 	// User provided unique identifier for the object.
+	// If present a uniqeness check is done when adding
+	// It is opaque and is passed in the callbacks as is
 	ID string
 
 	// Lifecycle hints
@@ -53,9 +57,10 @@ type ApplyableObject struct {
 
 	// lastReadRevision is the revision of the object that was last read from the cluster.
 	lastReadRevision string
+}
 
-	// marshalled is the marshalled json of the object.
-	marshalled []byte
+func (a *ApplyableObject) String() string {
+	return fmt.Sprintf("[%s:%s/%s]", a.GroupVersionKind(), a.GetNamespace(), a.GetName())
 }
 
 type k8sObjectKey struct {
@@ -72,10 +77,6 @@ type tracker struct {
 
 	// clientIDs is a map of object key to object.
 	clientIDs map[string]bool
-}
-
-func (a *ApplyableObject) Json() []byte {
-	return a.marshalled
 }
 
 func NewTracker() *tracker {
@@ -103,17 +104,19 @@ func (t *tracker) Add(obj ApplyableObject) error {
 	}
 	t.serverIDs[objectKey] = true
 
-	// client side uniqueness check
-	if _, found := t.clientIDs[obj.ID]; found {
-		return fmt.Errorf("duplicate objecti ID %v", obj.ID)
+	// TODO(barney-s): Do we need to care about client side uniqueness?
+	// We could just not take the ID (opaque string) and let user deal with mapping
+	// GVKNN to their ID. Adding a todo here to revisit this.
+	if obj.ID != "" {
+		if _, found := t.clientIDs[obj.ID]; found {
+			return fmt.Errorf("duplicate object ID %v", obj.ID)
+		}
+		t.clientIDs[obj.ID] = true
 	}
-	t.clientIDs[obj.ID] = true
 
 	// Ensure the object is marshallable
-	if j, err := json.Marshal(obj); err != nil {
+	if _, err := json.Marshal(obj); err != nil {
 		return fmt.Errorf("object %v is not json marshallable: %w", objectKey, err)
-	} else {
-		obj.marshalled = j
 	}
 
 	// Add the object to the tracker
