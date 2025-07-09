@@ -1,3 +1,4 @@
+// Copyright 2023 The Kubernetes Authors.
 // Copyright 2025 The Kube Resource Orchestrator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,14 +29,6 @@ const (
 	// list of the names of namespaces other than the parent's namespace in which objects are found
 	// Example value: "kube-system,ns1,ns2".
 	ApplySetAdditionalNamespacesAnnotation = "applyset.kubernetes.io/additional-namespaces"
-
-	// Deprecated: ApplySetGRsAnnotation is a list of group-resources used to optimize listing of ApplySet member objects.
-	// It is optional in the ApplySet specification, as tools can perform discovery or use a different optimization.
-	// However, it is currently required in kubectl.
-	// When present, the value of this annotation must be a comma separated list of the group-resources,
-	// in the fully-qualified name format, i.e. <resourcename>.<group>.
-	// Example value: "certificates.cert-manager.io,configmaps,deployments.apps,secrets,services"
-	DeprecatedApplySetGRsAnnotation = "applyset.kubernetes.io/contains-group-resources"
 
 	// ApplySetGKsAnnotation is a list of group-kinds used to optimize listing of ApplySet member objects.
 	// It is optional in the ApplySet specification, as tools can perform discovery or use a different optimization.

@@ -1,4 +1,5 @@
 // Copyright 2025 The Kube Resource Orchestrator Authors
+// Copyright 2022 The Kubernetes Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,6 +13,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Derived from: https://github.com/kubernetes-sigs/kubebuilder-declarative-pattern/blob/master/applylib/applyset/results.go
+
 package applyset
 
 import (
@@ -23,6 +26,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
+// AppliedObject is a wrapper around an ApplyableObject that contains the last applied object
+// It is used to track the applied object and any errors that occurred while applying it.
+// It is also used to check if the object has been mutated in the cluster as part of the apply operation.
 type AppliedObject struct {
 	ApplyableObject
 	LastApplied *unstructured.Unstructured
@@ -49,33 +55,40 @@ type PrunedObject struct {
 	Error error
 }
 
+// ApplyResult summarizes the results of an apply operation
+// It returns a list of applied and pruned objects
+// AppliedObject has both the input object and the result of the apply operation
+// Any errors returned by the apply call is also recorded in it.
+// PrunedObject records any error returned by the delete call.
 type ApplyResult struct {
-	Desired        int
+	DesiredCount   int
 	AppliedObjects []AppliedObject
 	PrunedObjects  []PrunedObject
 }
 
-func (a *ApplyResult) PruneErrors() error {
-	errorsSeen := []error{}
-	for _, pruned := range a.PrunedObjects {
-		if pruned.Error != nil {
-			errorsSeen = append(errorsSeen, pruned.Error)
-		}
-	}
-	return errors.Join(errorsSeen...)
+func (a *ApplyResult) Errors() error {
+	return errors.Join(a.applyErrors(), a.pruneErrors())
 }
 
-func (a *ApplyResult) ApplyErrors() error {
-	errorsSeen := []error{}
-	if len(a.AppliedObjects) != a.Desired {
-		errorsSeen = append(errorsSeen, fmt.Errorf("expected %d applied objects, got %d", a.Desired, len(a.AppliedObjects)))
+func (a *ApplyResult) pruneErrors() error {
+	var err error
+	for _, pruned := range a.PrunedObjects {
+		err = errors.Join(err, pruned.Error)
+	}
+	return err
+
+}
+
+func (a *ApplyResult) applyErrors() error {
+	var err error
+	if len(a.AppliedObjects) != a.DesiredCount {
+		err = errors.Join(err, fmt.Errorf("expected %d applied objects, got %d",
+			a.DesiredCount, len(a.AppliedObjects)))
 	}
 	for _, applied := range a.AppliedObjects {
-		if applied.Error != nil {
-			errorsSeen = append(errorsSeen, applied.Error)
-		}
+		err = errors.Join(err, applied.Error)
 	}
-	return errors.Join(errorsSeen...)
+	return err
 }
 
 func (a *ApplyResult) AppliedUIDs() sets.Set[types.UID] {
@@ -110,4 +123,16 @@ func (a *ApplyResult) recordApplied(
 	}
 	a.AppliedObjects = append(a.AppliedObjects, ao)
 	return ao
+}
+
+func (a *ApplyResult) recordPruned(
+	obj PruneObject,
+	err error,
+) PrunedObject {
+	po := PrunedObject{
+		PruneObject: obj,
+		Error:       err,
+	}
+	a.PrunedObjects = append(a.PrunedObjects, po)
+	return po
 }

@@ -78,8 +78,6 @@ type Controller struct {
 	gvr schema.GroupVersionResource
 	// client holds the dynamic client to use for interacting with the Kubernetes API.
 	clientSet kroclient.SetInterface
-	// restMapper is a REST mapper for the Kubernetes API server
-	restMapper meta.RESTMapper
 	// rgd is a read-only reference to the Graph that the controller is
 	// managing instances for.
 	// TODO: use a read-only interface for the ResourceGraphDefinition
@@ -87,9 +85,6 @@ type Controller struct {
 	// instanceLabeler is responsible for applying consistent labels
 	// to resources managed by this controller.
 	instanceLabeler metadata.Labeler
-	// sourceLabeler is responsible for applying source labels
-	// to instance managed by this controller.
-	sourceLabeler metadata.Labeler
 	// reconcileConfig holds the configuration parameters for the reconciliation
 	// process.
 	reconcileConfig ReconcileConfig
@@ -107,16 +102,13 @@ func NewController(
 	restMapper meta.RESTMapper,
 	defaultServiceAccounts map[string]string,
 	instanceLabeler metadata.Labeler,
-	sourceLabeler metadata.Labeler,
 ) *Controller {
 	return &Controller{
 		log:                    log,
 		gvr:                    gvr,
 		clientSet:              clientSet,
-		restMapper:             restMapper,
 		rgd:                    rgd,
 		instanceLabeler:        instanceLabeler,
-		sourceLabeler:          sourceLabeler,
 		reconcileConfig:        reconcileConfig,
 		defaultServiceAccounts: defaultServiceAccounts,
 	}
@@ -164,9 +156,9 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) error {
 		log:                         log,
 		gvr:                         c.gvr,
 		client:                      executionClient,
-		restMapper:                  c.restMapper,
+		restMapper:                  c.clientSet.RESTMapper(),
 		runtime:                     rgRuntime,
-		instanceLabeler:             c.sourceLabeler,
+		instanceLabeler:             c.instanceLabeler,
 		instanceSubResourcesLabeler: instanceSubResourcesLabeler,
 		reconcileConfig:             c.reconcileConfig,
 		// Fresh instance state at each reconciliation loop.

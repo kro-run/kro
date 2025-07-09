@@ -101,6 +101,9 @@ func (igr *instanceGraphReconciler) patchInstanceStatus(ctx context.Context, sta
 	instance := igr.runtime.GetInstance().DeepCopy()
 	instance.Object["status"] = status
 
+	// We are using retry.RetryOnConflict to handle conflicts.
+	// This is because this method is called in a defer path and there is no way to return an error.
+	// TODO(barney-s): We should explore removing the defer path and returning an error.
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		instance, err := igr.client.Resource(igr.gvr).
 			Namespace(instance.GetNamespace()).
