@@ -42,6 +42,10 @@ spec:
       podLogs:
         selector: app.kubernetes.io/instance=kro
         namespace: kro-system
+    finally:
+    - description: sleep operation
+      sleep:
+        duration: 5s
   - name: check-that-crd-is-deleted
     try:
     - error:

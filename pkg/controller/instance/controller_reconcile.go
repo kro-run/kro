@@ -29,7 +29,7 @@ import (
 
 	"sigs.k8s.io/release-utils/version"
 
-	"github.com/kro-run/kro/applylib/applyset"
+	"github.com/kro-run/kro/pkg/applyset"
 	"github.com/kro-run/kro/pkg/metadata"
 	"github.com/kro-run/kro/pkg/requeue"
 	"github.com/kro-run/kro/pkg/runtime"
@@ -47,10 +47,13 @@ const (
 	ResourceStatePendingDeletion     = "PENDING_DELETION"
 	ResourceStateWaitingForReadiness = "WAITING_FOR_READINESS"
 	ResourceStateUpdating            = "UPDATING"
+
+	FieldManagerForApplyset = "kro-applyset"
+	FieldManagerForLabeler  = "kro-labeller"
 )
 
 var (
-	KROTooling = applyset.ApplySetTooling{
+	KROTooling = applyset.ToolingID{
 		Name:    "kro",
 		Version: version.GetVersionInfo().GitVersion,
 	}
@@ -181,15 +184,16 @@ func (igr *instanceGraphReconciler) reconcileInstance(ctx context.Context) error
 
 	// TODO (barney-s):
 	// - inject logger
-	config := applyset.ApplySetConfig{
+	config := applyset.Config{
 		ToolLabels:         igr.instanceSubResourcesLabeler.Labels(),
-		FieldManager:       "kro-controller",
+		FieldManager:       FieldManagerForApplyset,
 		ToolingID:          KROTooling,
 		LoadCallback:       igr.processLoad,
 		AfterApplyCallback: igr.processAfterApply,
+		Log:                igr.log,
 	}
 
-	aset, err := applyset.NewApplySet(instance, igr.restMapper, igr.client, config)
+	aset, err := applyset.New(instance, igr.restMapper, igr.client, config)
 	if err != nil {
 		return igr.delayedRequeue(fmt.Errorf("failed creating an applyset: %w", err))
 	}
@@ -223,9 +227,9 @@ func (igr *instanceGraphReconciler) reconcileInstance(ctx context.Context) error
 		}
 
 		applyable := applyset.ApplyableObject{
-			Applyable:   resource,
-			ID:          resourceID,
-			ExternalRef: igr.runtime.ResourceDescriptor(resourceID).IsExternalRef(),
+			Unstructured: resource,
+			ID:           resourceID,
+			ExternalRef:  igr.runtime.ResourceDescriptor(resourceID).IsExternalRef(),
 		}
 		err = aset.Add(ctx, applyable)
 		if err != nil {
@@ -247,14 +251,15 @@ func (igr *instanceGraphReconciler) reconcileInstance(ctx context.Context) error
 		return fmt.Errorf("failed to synchronize after apply/prune: %w", err)
 	}
 
-	if err := result.PruneErrors(); err != nil {
-		return fmt.Errorf("failed to prune resources: %w", err)
+	if err := result.Errors(); err != nil {
+		return fmt.Errorf("failed to apply/prune resources: %w", err)
 	}
 
 	if unresolvedResourceID != "" {
 		return igr.delayedRequeue(fmt.Errorf("unresolved resource: %s", unresolvedResourceID))
 	}
 
+	// If there are any cluster mutations, we need to requeue.
 	if result.HasClusterMutation() {
 		return igr.delayedRequeue(fmt.Errorf("changes applied to cluster"))
 	}
@@ -440,7 +445,7 @@ func (igr *instanceGraphReconciler) setManaged(ctx context.Context, obj *unstruc
 
 	updated, err := igr.client.Resource(igr.gvr).
 		Namespace(obj.GetNamespace()).
-		Apply(ctx, instancePatch.GetName(), instancePatch, metav1.ApplyOptions{FieldManager: "kro-managed", Force: false})
+		Apply(ctx, instancePatch.GetName(), instancePatch, metav1.ApplyOptions{FieldManager: FieldManagerForLabeler, Force: false})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update managed state: %w", err)
 	}
@@ -475,7 +480,7 @@ func (igr *instanceGraphReconciler) setUnmanaged(
 
 	updated, err := igr.client.Resource(igr.gvr).
 		Namespace(obj.GetNamespace()).
-		Apply(ctx, instancePatch.GetName(), instancePatch, metav1.ApplyOptions{FieldManager: "kro-managed", Force: true})
+		Apply(ctx, instancePatch.GetName(), instancePatch, metav1.ApplyOptions{FieldManager: FieldManagerForLabeler, Force: true})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update unmanaged state: %w", err)
 	}

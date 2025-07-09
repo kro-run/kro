@@ -16,6 +16,8 @@
 //  * kubectl pkg/cmd/apply/applyset.go
 //  * kubebuilder-declarative-pattern/applylib
 //  * Creating a simpler, self-contained version of the library that is purpose built for controllers.
+//  * KEP describing applyset:
+//     https://git.k8s.io/enhancements/keps/sig-cli/3659-kubectl-apply-prune#design-details-applyset-specification
 
 package applyset
 
@@ -28,6 +30,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,21 +40,26 @@ import (
 	"k8s.io/client-go/dynamic"
 )
 
-type ApplySetTooling struct {
+type ToolingID struct {
 	Name    string
 	Version string
 }
 
-type ApplySet interface {
+func (t ToolingID) String() string {
+	return fmt.Sprintf("%s/%s", t.Name, t.Version)
+}
+
+type Set interface {
 	Add(ctx context.Context, obj ApplyableObject) error
 	Apply(ctx context.Context, prune bool) (*ApplyResult, error)
 	DryRun(ctx context.Context, prune bool) (*ApplyResult, error)
 }
 
-type ApplySetConfig struct {
+type Config struct {
 	ToolLabels   map[string]string
 	FieldManager string
-	ToolingID    ApplySetTooling
+	ToolingID    ToolingID
+	Log          logr.Logger
 
 	// Callbacks
 	LoadCallback        func(obj ApplyableObject, clusterValue *unstructured.Unstructured) error
@@ -59,16 +67,15 @@ type ApplySetConfig struct {
 	BeforePruneCallback func(obj PrunedObject) error
 }
 
-// NewApplySet creates a new ApplySet
+// New creates a new ApplySet
 // parent object is expected to be the current one existing in the cluster
-func NewApplySet(
+func New(
 	parent *unstructured.Unstructured,
 	restMapper meta.RESTMapper,
 	dynamicClient dynamic.Interface,
-	config ApplySetConfig,
-) (ApplySet, error) {
-	force := true
-	if config.ToolingID == (ApplySetTooling{}) {
+	config Config,
+) (Set, error) {
+	if config.ToolingID == (ToolingID{}) {
 		return nil, fmt.Errorf("toolingID is required")
 	}
 	if config.FieldManager == "" {
@@ -78,8 +85,9 @@ func NewApplySet(
 		parent:              parent,
 		toolingID:           config.ToolingID,
 		toolLabels:          config.ToolLabels,
+		fieldManager:        config.FieldManager,
 		desired:             NewTracker(),
-		desiredRestMappings: make(map[schema.GroupKind]*meta.RESTMapping),
+		desiredRESTMappings: make(map[schema.GroupKind]*meta.RESTMapping),
 		desiredNamespaces:   sets.Set[string]{},
 		clientSet: clientSet{
 			restMapper:    restMapper,
@@ -88,7 +96,7 @@ func NewApplySet(
 		serverOptions: serverOptions{
 			applyOptions: metav1.ApplyOptions{
 				FieldManager: config.FieldManager,
-				Force:        force,
+				Force:        true,
 			},
 			//deleteOptions: metav1.DeleteOptions{},
 		},
@@ -97,6 +105,7 @@ func NewApplySet(
 			afterApplyFn:  config.AfterApplyCallback,
 			beforePruneFn: config.BeforePruneCallback,
 		},
+		log: config.Log,
 	}
 
 	gvk := parent.GroupVersionKind()
@@ -124,18 +133,18 @@ type callbacks struct {
 }
 
 type serverOptions struct {
-	// patchOptions holds the options used when applying, in particular the fieldManager
+	// applyOptions holds the options used when applying, in particular the fieldManager
 	applyOptions metav1.ApplyOptions
 
-	// deleteOptions holds the options used when pruning
+	// deleteOptions holds the options used when pruning.
 	deleteOptions metav1.DeleteOptions
 }
 
 type clientSet struct {
-	// client is the dynamic kubernetes client used to apply objects to the k8s cluster.
+	// dynamicClient is the dynamic kubernetes client used to apply objects to the k8s cluster.
 	dynamicClient dynamic.Interface
 
-	// ParentClient is the controller runtime client used to apply parent.
+	// parentClient is the controller runtime client used to apply parent.
 	parentClient dynamic.ResourceInterface
 	// restMapper is used to map object kind to resources, and to know if objects are cluster-scoped.
 	restMapper meta.RESTMapper
@@ -149,7 +158,10 @@ type applySet struct {
 	parent *unstructured.Unstructured
 
 	// toolingID is the value to be used and validated in the applyset.kubernetes.io/tooling annotation.
-	toolingID ApplySetTooling
+	toolingID ToolingID
+
+	// fieldManager is the name of the field manager that will be used to apply the resources.
+	fieldManager string
 
 	// toolLabels is a map of tool provided labels to be applied to the resources
 	toolLabels map[string]string
@@ -158,18 +170,16 @@ type applySet struct {
 	currentLabels      map[string]string
 	currentAnnotations map[string]string
 
-	// desiredRestMappings is a map of object key to object.RESTMapping
-	desiredRestMappings map[schema.GroupKind]*meta.RESTMapping
+	// desiredRESTMappings is a map of object key to object.RESTMapping
+	desiredRESTMappings map[schema.GroupKind]*meta.RESTMapping
 	desiredNamespaces   sets.Set[string]
 
 	desired *tracker
 	clientSet
 	serverOptions
 	callbacks
-}
 
-func (t ApplySetTooling) String() string {
-	return fmt.Sprintf("%s/%s", t.Name, t.Version)
+	log logr.Logger
 }
 
 func (a *applySet) validateAndCacheNamespace(obj ApplyableObject, restMapping *meta.RESTMapping) error {
@@ -177,11 +187,12 @@ func (a *applySet) validateAndCacheNamespace(obj ApplyableObject, restMapping *m
 	gvk := obj.GroupVersionKind()
 	switch restMapping.Scope.Name() {
 	case meta.RESTScopeNameNamespace:
-		// TODO (barney-s): Should we allow empty namespace for namespace-scoped objects?
-		//if obj.GetNamespace() == "" {
-		//	return fmt.Errorf("namespace was not provided for namespace-scoped object %v %v", gvk, obj.GetName())
-		//}
-		a.desiredNamespaces.Insert(obj.GetNamespace())
+		// If empty use the parent's namespace for the object.
+		namespace := obj.GetNamespace()
+		if namespace == "" {
+			namespace = a.parent.GetNamespace()
+		}
+		a.desiredNamespaces.Insert(namespace)
 	case meta.RESTScopeNameRoot:
 		if obj.GetNamespace() != "" {
 			return fmt.Errorf("namespace was provided for cluster-scoped object %v %v", gvk, obj.GetName())
@@ -198,7 +209,7 @@ func (a *applySet) validateAndCacheRestMapping(obj ApplyableObject) (*meta.RESTM
 	gvk := obj.GroupVersionKind()
 	gk := gvk.GroupKind()
 	// Ensure a rest mapping exists for the object
-	_, found := a.desiredRestMappings[gk]
+	_, found := a.desiredRESTMappings[gk]
 	if !found {
 		restMapping, err := a.restMapper.RESTMapping(gk, gvk.Version)
 		if err != nil {
@@ -207,14 +218,14 @@ func (a *applySet) validateAndCacheRestMapping(obj ApplyableObject) (*meta.RESTM
 		if restMapping == nil {
 			return nil, fmt.Errorf("rest mapping not found for %v", gvk)
 		}
-		a.desiredRestMappings[gk] = restMapping
+		a.desiredRESTMappings[gk] = restMapping
 	}
 
-	return a.desiredRestMappings[gk], nil
+	return a.desiredRESTMappings[gk], nil
 }
 
-func (a *applySet) ResourceClient(obj Applyable) dynamic.ResourceInterface {
-	restMapping, ok := a.desiredRestMappings[obj.GroupVersionKind().GroupKind()]
+func (a *applySet) resourceClient(obj Applyable) dynamic.ResourceInterface {
+	restMapping, ok := a.desiredRESTMappings[obj.GroupVersionKind().GroupKind()]
 	if !ok {
 		return nil
 	}
@@ -240,9 +251,9 @@ func (a *applySet) Add(ctx context.Context, obj ApplyableObject) error {
 	if err := a.validateAndCacheNamespace(obj, restMapping); err != nil {
 		return err
 	}
-	obj.SetLabels(a.InjectApplysetLabels(a.InjectToolLabels(obj.GetLabels())))
+	obj.SetLabels(a.InjectApplysetLabels(a.injectToolLabels(obj.GetLabels())))
 
-	dynResource := a.ResourceClient(obj)
+	dynResource := a.resourceClient(obj)
 	// This should never happen, but if it does, we want to know about it.
 	if dynResource == nil {
 		return fmt.Errorf("FATAL: rest mapping not found for %v", obj.GroupVersionKind())
@@ -262,6 +273,7 @@ func (a *applySet) Add(ctx context.Context, obj ApplyableObject) error {
 		// Record the last read revision of the object.
 		obj.lastReadRevision = observed.GetResourceVersion()
 	}
+	a.log.V(2).Info("adding object to applyset", "object", obj.String(), "cluster-revision", obj.lastReadRevision)
 
 	if err := a.desired.Add(obj); err != nil {
 		return err
@@ -277,7 +289,6 @@ func (a *applySet) Add(ctx context.Context, obj ApplyableObject) error {
 
 // ID is the label value that we are using to identify this applyset.
 // Format: base64(sha256(<name>.<namespace>.<kind>.<apiVersion>)), using the URL safe encoding of RFC4648.
-
 func (a *applySet) ID() string {
 	unencoded := strings.Join([]string{
 		a.parent.GetName(),
@@ -291,7 +302,7 @@ func (a *applySet) ID() string {
 	return fmt.Sprintf(V1ApplySetIdFormat, b64)
 }
 
-func (a *applySet) InjectToolLabels(labels map[string]string) map[string]string {
+func (a *applySet) injectToolLabels(labels map[string]string) map[string]string {
 	if labels == nil {
 		labels = make(map[string]string)
 	}
@@ -311,13 +322,13 @@ func (a *applySet) InjectApplysetLabels(labels map[string]string) map[string]str
 	return labels
 }
 
-type ApplySetUpdateMode string
+type applySetUpdateMode string
 
-var updateToLatestSet ApplySetUpdateMode = "latest"
-var updateToSuperset ApplySetUpdateMode = "superset"
+var updateToLatestSet applySetUpdateMode = "latest"
+var updateToSuperset applySetUpdateMode = "superset"
 
 // updateParentLabelsAndAnnotations updates the parent labels and annotations.
-func (a *applySet) updateParentLabelsAndAnnotations(ctx context.Context, mode ApplySetUpdateMode) error {
+func (a *applySet) updateParentLabelsAndAnnotations(ctx context.Context, mode applySetUpdateMode) error {
 	original, err := meta.Accessor(a.parent.DeepCopyObject())
 	if err != nil {
 		return err
@@ -355,7 +366,7 @@ func (a *applySet) updateParentLabelsAndAnnotations(ctx context.Context, mode Ap
 	parentPatch.SetAnnotations(annotations)
 
 	options := metav1.ApplyOptions{
-		FieldManager: "kro-parent-labeller",
+		FieldManager: a.fieldManager + "parent-labeller",
 		Force:        false,
 	}
 
@@ -365,6 +376,10 @@ func (a *applySet) updateParentLabelsAndAnnotations(ctx context.Context, mode Ap
 		if _, err := a.parentClient.Apply(ctx, a.parent.GetName(), parentPatch, options); err != nil {
 			return fmt.Errorf("error updating parent %w", err)
 		}
+		a.log.V(2).Info("updated parent labels and annotations", "parent-name", a.parent.GetName(),
+			"parent-namespace", a.parent.GetNamespace(),
+			"parent-gvk", a.parent.GroupVersionKind(),
+			"parent-labels", desiredLabels, "parent-annotations", desiredAnnotations)
 	}
 	return nil
 }
@@ -381,7 +396,7 @@ func (a *applySet) desiredParentAnnotations(includeCurrent bool) map[string]stri
 
 	// Generate sorted comma-separated list of GKs
 	gks := sets.Set[string]{}
-	for gk := range a.desiredRestMappings {
+	for gk := range a.desiredRESTMappings {
 		gks.Insert(gk.String())
 	}
 	if includeCurrent {
@@ -407,7 +422,7 @@ func (a *applySet) desiredParentAnnotations(includeCurrent bool) map[string]stri
 }
 
 func (a *applySet) apply(ctx context.Context, dryRun bool) (*ApplyResult, error) {
-	results := &ApplyResult{Desired: a.desired.Len()}
+	results := &ApplyResult{DesiredCount: a.desired.Len()}
 
 	// If dryRun is true, we will not update the parent labels and annotations.
 	if !dryRun {
@@ -429,20 +444,17 @@ func (a *applySet) apply(ctx context.Context, dryRun bool) (*ApplyResult, error)
 	if dryRun {
 		options.DryRun = []string{"All"}
 	}
-	for i := range a.desired.objects {
-		obj := a.desired.objects[i]
+	for _, obj := range a.desired.objects {
 
-		dynResource := a.ResourceClient(obj)
+		dynResource := a.resourceClient(obj)
 		// This should never happen, but if it does, we want to know about it.
 		if dynResource == nil {
 			return results, fmt.Errorf("FATAL: rest mapping not found for %v", obj.GroupVersionKind())
 		}
-		unstructuredObj, ok := obj.Applyable.(*unstructured.Unstructured)
-		if !ok {
-			return results, fmt.Errorf("FATAL: object %v is not an unstructured.Unstructured", obj.GroupVersionKind())
-		}
-		lastApplied, err := dynResource.Apply(ctx, obj.GetName(), unstructuredObj, options)
-		ao := results.recordApplied(a.desired.objects[i], lastApplied, err)
+		lastApplied, err := dynResource.Apply(ctx, obj.GetName(), obj.Unstructured, options)
+		ao := results.recordApplied(obj, lastApplied, err)
+		a.log.V(2).Info("applied object", "object", obj.String(), "applied-revision", lastApplied.GetResourceVersion(),
+			"error", err)
 
 		if a.afterApplyFn != nil {
 			if err := a.afterApplyFn(ao); err != nil {
@@ -469,23 +481,21 @@ func (a *applySet) prune(ctx context.Context, results *ApplyResult, dryRun bool)
 		options.DryRun = []string{"All"}
 	}
 	for i := range pruneObjects {
-		pruneObject := &pruneObjects[i]
-		name := pruneObject.Name
-		namespace := pruneObject.Namespace
-		mapping := pruneObject.Mapping
+		name := pruneObjects[i].GetName()
+		namespace := pruneObjects[i].GetNamespace()
+		mapping := pruneObjects[i].Mapping
 
 		// TODO: Why is it always using namesapce ?
-		po := PrunedObject{
-			PruneObject: pruneObjects[i],
-		}
 		if a.beforePruneFn != nil {
-			if err := a.beforePruneFn(po); err != nil {
+			if err := a.beforePruneFn(PrunedObject{
+				PruneObject: pruneObjects[i],
+			}); err != nil {
 				return results, fmt.Errorf("error from before-prune callback: %w", err)
 			}
 		}
 		err := a.dynamicClient.Resource(mapping.Resource).Namespace(namespace).Delete(ctx, name, options)
-		po.Error = err
-		results.PrunedObjects = append(results.PrunedObjects, po)
+		results.recordPruned(pruneObjects[i], err)
+		a.log.V(2).Info("pruned object", "object", pruneObjects[i].String(), "error", err)
 	}
 
 	if !dryRun {
