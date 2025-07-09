@@ -17,15 +17,14 @@ package applyset
 import (
 	"context"
 	"fmt"
-	"sync"
 
+	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/klog/v2"
 )
 
 type ApplySetDeleteOptions struct {
@@ -36,20 +35,18 @@ type ApplySetDeleteOptions struct {
 
 // PruneObject is an apiserver object that should be deleted as part of prune.
 type PruneObject struct {
-	Name      string
-	Namespace string
-	Mapping   *meta.RESTMapping
-	Object    runtime.Object
+	*unstructured.Unstructured
+	Mapping *meta.RESTMapping
 }
 
 // String returns a human-readable name of the object, for use in debug messages.
 func (p *PruneObject) String() string {
 	s := p.Mapping.GroupVersionKind.GroupKind().String()
 
-	if p.Namespace != "" {
-		s += " " + p.Namespace + "/" + p.Name
+	if p.GetNamespace() != "" {
+		s += " " + p.GetNamespace() + "/" + p.GetName()
 	} else {
-		s += " " + p.Name
+		s += " " + p.GetName()
 	}
 	return s
 }
@@ -59,20 +56,18 @@ func (p *PruneObject) String() string {
 func (a *applySet) FindAllObjectsToPrune(
 	ctx context.Context,
 	dynamicClient dynamic.Interface,
-	visitedUids sets.Set[types.UID],
+	visitedUIDs sets.Set[types.UID],
 ) ([]PruneObject, error) {
 	type task struct {
 		namespace   string
 		restMapping *meta.RESTMapping
-
-		err     error
-		results []PruneObject
+		results     []PruneObject
 	}
 	var tasks []*task
 
 	// We run discovery in parallel, in as many goroutines as priority and fairness will allow
 	// (We don't expect many requests in real-world scenarios - maybe tens, unlikely to be hundreds)
-	for _, restMapping := range a.desiredRestMappings {
+	for _, restMapping := range a.desiredRESTMappings {
 		switch restMapping.Scope.Name() {
 		case meta.RESTScopeNameNamespace:
 			for _, namespace := range a.desiredNamespaces.UnsortedList() {
@@ -98,30 +93,26 @@ func (a *applySet) FindAllObjectsToPrune(
 		}
 	}
 
-	var wg sync.WaitGroup
-
+	group, ctx := errgroup.WithContext(ctx)
 	for i := range tasks {
 		task := tasks[i]
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
-			results, err := a.findObjectsToPrune(ctx, dynamicClient, visitedUids, task.namespace, task.restMapping)
+		group.Go(func() error {
+			results, err := a.findObjectsToPrune(ctx, dynamicClient, visitedUIDs, task.namespace, task.restMapping)
 			if err != nil {
-				task.err = fmt.Errorf("listing %v objects for pruning: %w", task.restMapping.GroupVersionKind.String(), err)
+				return fmt.Errorf("listing %v objects for pruning: %w", task.restMapping.GroupVersionKind.String(), err)
 			} else {
 				task.results = results
 			}
-		}()
+			return nil
+		})
 	}
 	// Wait for all the goroutines to finish
-	wg.Wait()
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
 
 	var allObjects []PruneObject
 	for _, task := range tasks {
-		if task.err != nil {
-			return nil, task.err
-		}
 		allObjects = append(allObjects, task.results...)
 	}
 	return allObjects, nil
@@ -136,7 +127,7 @@ func (a *applySet) LabelSelectorForMembers() string {
 func (a *applySet) findObjectsToPrune(
 	ctx context.Context,
 	dynamicClient dynamic.Interface,
-	visitedUids sets.Set[types.UID],
+	visitedUIDs sets.Set[types.UID],
 	namespace string,
 	mapping *meta.RESTMapping,
 ) ([]PruneObject, error) {
@@ -146,7 +137,7 @@ func (a *applySet) findObjectsToPrune(
 		LabelSelector: applysetLabelSelector,
 	}
 
-	klog.V(2).Infof("listing objects for pruning; namespace=%q, resource=%v", namespace, mapping.Resource)
+	a.log.V(2).Info("listing objects for pruning", "namespace", namespace, "resource", mapping.Resource)
 	objects, err := dynamicClient.Resource(mapping.Resource).Namespace(namespace).List(ctx, opt)
 	if err != nil {
 		return nil, err
@@ -157,15 +148,13 @@ func (a *applySet) findObjectsToPrune(
 		obj := &objects.Items[i]
 
 		uid := obj.GetUID()
-		if visitedUids.Has(uid) {
+		if visitedUIDs.Has(uid) {
 			continue
 		}
-		name := obj.GetName()
+
 		pruneObjects = append(pruneObjects, PruneObject{
-			Name:      name,
-			Namespace: namespace,
-			Mapping:   mapping,
-			Object:    obj,
+			Unstructured: obj,
+			Mapping:      mapping,
 		})
 
 	}

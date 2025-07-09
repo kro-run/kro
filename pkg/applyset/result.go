@@ -50,12 +50,16 @@ type PrunedObject struct {
 }
 
 type ApplyResult struct {
-	Desired        int
+	DesiredCount   int
 	AppliedObjects []AppliedObject
 	PrunedObjects  []PrunedObject
 }
 
-func (a *ApplyResult) PruneErrors() error {
+func (a *ApplyResult) Errors() error {
+	return errors.Join(a.applyErrors(), a.pruneErrors())
+}
+
+func (a *ApplyResult) pruneErrors() error {
 	errorsSeen := []error{}
 	for _, pruned := range a.PrunedObjects {
 		if pruned.Error != nil {
@@ -65,10 +69,11 @@ func (a *ApplyResult) PruneErrors() error {
 	return errors.Join(errorsSeen...)
 }
 
-func (a *ApplyResult) ApplyErrors() error {
+func (a *ApplyResult) applyErrors() error {
 	errorsSeen := []error{}
-	if len(a.AppliedObjects) != a.Desired {
-		errorsSeen = append(errorsSeen, fmt.Errorf("expected %d applied objects, got %d", a.Desired, len(a.AppliedObjects)))
+	if len(a.AppliedObjects) != a.DesiredCount {
+		errorsSeen = append(errorsSeen, fmt.Errorf("expected %d applied objects, got %d",
+			a.DesiredCount, len(a.AppliedObjects)))
 	}
 	for _, applied := range a.AppliedObjects {
 		if applied.Error != nil {
@@ -110,4 +115,16 @@ func (a *ApplyResult) recordApplied(
 	}
 	a.AppliedObjects = append(a.AppliedObjects, ao)
 	return ao
+}
+
+func (a *ApplyResult) recordPruned(
+	obj PruneObject,
+	err error,
+) PrunedObject {
+	po := PrunedObject{
+		PruneObject: obj,
+		Error:       err,
+	}
+	a.PrunedObjects = append(a.PrunedObjects, po)
+	return po
 }
