@@ -89,6 +89,8 @@ func New(
 		desired:             NewTracker(),
 		desiredRESTMappings: make(map[schema.GroupKind]*meta.RESTMapping),
 		desiredNamespaces:   sets.Set[string]{},
+		supersetNamespaces:  sets.Set[string]{},
+		supersetGKs:         sets.Set[string]{},
 		clientSet: clientSet{
 			restMapper:    restMapper,
 			dynamicClient: dynamicClient,
@@ -170,9 +172,15 @@ type applySet struct {
 	currentLabels      map[string]string
 	currentAnnotations map[string]string
 
-	// desiredRESTMappings is a map of object key to object.RESTMapping
+	// set of applyset object rest mappings
 	desiredRESTMappings map[schema.GroupKind]*meta.RESTMapping
-	desiredNamespaces   sets.Set[string]
+	// set of applyset object namespaces
+	desiredNamespaces sets.Set[string]
+
+	// superset of desired and old namespaces
+	supersetNamespaces sets.Set[string]
+	// superset of desired and old GKs
+	supersetGKs sets.Set[string]
 
 	desired *tracker
 	clientSet
@@ -328,10 +336,11 @@ var updateToLatestSet applySetUpdateMode = "latest"
 var updateToSuperset applySetUpdateMode = "superset"
 
 // updateParentLabelsAndAnnotations updates the parent labels and annotations.
-func (a *applySet) updateParentLabelsAndAnnotations(ctx context.Context, mode applySetUpdateMode) error {
+func (a *applySet) updateParentLabelsAndAnnotations(ctx context.Context, mode applySetUpdateMode) (sets.Set[string],
+	sets.Set[string], error) {
 	original, err := meta.Accessor(a.parent.DeepCopyObject())
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	parentPatch := &unstructured.Unstructured{}
@@ -355,7 +364,7 @@ func (a *applySet) updateParentLabelsAndAnnotations(ctx context.Context, mode ap
 	parentPatch.SetLabels(labels)
 
 	// Get the desired annotations and append them to the parent
-	desiredAnnotations := a.desiredParentAnnotations(mode == updateToSuperset)
+	desiredAnnotations, returnNamespaces, returnGKs := a.desiredParentAnnotations(mode == updateToSuperset)
 	annotations := a.parent.GetAnnotations()
 	if annotations == nil {
 		annotations = make(map[string]string)
@@ -374,14 +383,14 @@ func (a *applySet) updateParentLabelsAndAnnotations(ctx context.Context, mode ap
 	if !reflect.DeepEqual(original.GetLabels(), parentPatch.GetLabels()) ||
 		!reflect.DeepEqual(original.GetAnnotations(), parentPatch.GetAnnotations()) {
 		if _, err := a.parentClient.Apply(ctx, a.parent.GetName(), parentPatch, options); err != nil {
-			return fmt.Errorf("error updating parent %w", err)
+			return nil, nil, fmt.Errorf("error updating parent %w", err)
 		}
 		a.log.V(2).Info("updated parent labels and annotations", "parent-name", a.parent.GetName(),
 			"parent-namespace", a.parent.GetNamespace(),
 			"parent-gvk", a.parent.GroupVersionKind(),
 			"parent-labels", desiredLabels, "parent-annotations", desiredAnnotations)
 	}
-	return nil
+	return returnNamespaces, returnGKs, nil
 }
 
 func (a *applySet) desiredParentLabels() map[string]string {
@@ -390,7 +399,9 @@ func (a *applySet) desiredParentLabels() map[string]string {
 	return labels
 }
 
-func (a *applySet) desiredParentAnnotations(includeCurrent bool) map[string]string {
+// Return the annotations as well as the set of namespaces and GKs
+func (a *applySet) desiredParentAnnotations(includeCurrent bool) (map[string]string,
+	sets.Set[string], sets.Set[string]) {
 	annotations := make(map[string]string)
 	annotations[ApplySetToolingAnnotation] = a.toolingID.String()
 
@@ -418,7 +429,7 @@ func (a *applySet) desiredParentAnnotations(includeCurrent bool) map[string]stri
 	nsList := a.desiredNamespaces.UnsortedList()
 	sort.Strings(nsList)
 	annotations[ApplySetAdditionalNamespacesAnnotation] = strings.Join(nsList, ",")
-	return annotations
+	return annotations, nss, gks
 }
 
 func (a *applySet) apply(ctx context.Context, dryRun bool) (*ApplyResult, error) {
@@ -435,7 +446,8 @@ func (a *applySet) apply(ctx context.Context, dryRun bool) (*ApplyResult, error)
 		a.currentAnnotations = parent.GetAnnotations()
 
 		// We will ensure the parent is updated with the latest applyset before applying the resources.
-		if err := a.updateParentLabelsAndAnnotations(ctx, updateToSuperset); err != nil {
+		a.supersetNamespaces, a.supersetGKs, err = a.updateParentLabelsAndAnnotations(ctx, updateToSuperset)
+		if err != nil {
 			return results, fmt.Errorf("unable to update Parent: %w", err)
 		}
 	}
@@ -501,7 +513,7 @@ func (a *applySet) prune(ctx context.Context, results *ApplyResult, dryRun bool)
 	if !dryRun {
 		// "latest" mode updates the parent "applyset.kubernetes.io/contains-group-resources" annotations
 		// to only contain the current manifest GVRs.
-		if err := a.updateParentLabelsAndAnnotations(ctx, updateToLatestSet); err != nil {
+		if _, _, err := a.updateParentLabelsAndAnnotations(ctx, updateToLatestSet); err != nil {
 			return results, fmt.Errorf("unable to update Parent: %w", err)
 		}
 	}
