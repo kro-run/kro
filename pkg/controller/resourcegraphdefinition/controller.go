@@ -19,6 +19,7 @@ import (
 
 	"github.com/go-logr/logr"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -47,6 +48,8 @@ type ResourceGraphDefinitionReconciler struct {
 	// Client and instanceLogger are set with SetupWithManager
 
 	client.Client
+
+	restMapper     meta.RESTMapper
 	instanceLogger logr.Logger
 
 	clientSet  *kroclient.Set
@@ -81,6 +84,7 @@ func NewResourceGraphDefinitionReconciler(
 // SetupWithManager sets up the controller with the Manager.
 func (r *ResourceGraphDefinitionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Client = mgr.GetClient()
+	r.restMapper = mgr.GetRESTMapper()
 	r.instanceLogger = mgr.GetLogger()
 
 	logConstructor := func(req *reconcile.Request) logr.Logger {
@@ -151,7 +155,10 @@ func (r *ResourceGraphDefinitionReconciler) findRGDsForCRD(ctx context.Context, 
 	}
 }
 
-func (r *ResourceGraphDefinitionReconciler) Reconcile(ctx context.Context, o *v1alpha1.ResourceGraphDefinition) (ctrl.Result, error) {
+func (r *ResourceGraphDefinitionReconciler) Reconcile(
+	ctx context.Context,
+	o *v1alpha1.ResourceGraphDefinition,
+) (ctrl.Result, error) {
 	if !o.DeletionTimestamp.IsZero() {
 		if err := r.cleanupResourceGraphDefinition(ctx, o); err != nil {
 			return ctrl.Result{}, err
