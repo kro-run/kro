@@ -1,3 +1,17 @@
+// Copyright 2025 The Kube Resource Orchestrator Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package commands
 
 import (
@@ -5,6 +19,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/go-echarts/go-echarts/v2/charts"
+	"github.com/go-echarts/go-echarts/v2/opts"
 	"github.com/kro-run/kro/api/v1alpha1"
 	kroclient "github.com/kro-run/kro/pkg/client"
 	"github.com/kro-run/kro/pkg/graph"
@@ -62,6 +78,35 @@ var generateCRDCmd = &cobra.Command{
 	},
 }
 
+var generateDiagramCmd = &cobra.Command{
+	Use:   "diagram",
+	Short: "Generate a diagram from a ResourceGroupDefinition",
+	Long: "Generate a diagram from a ResourceGroupDefinition file. This command reads the " +
+		"ResourceGroupDefinition and outputs the corresponding diagram " +
+		"in the specified format.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if config.resourceGroupDefinitionFile == "" {
+			return fmt.Errorf("ResourceGroupDefinition file is required")
+		}
+
+		data, err := os.ReadFile(config.resourceGroupDefinitionFile)
+		if err != nil {
+			return fmt.Errorf("failed to read ResourceGroupDefinition file: %w", err)
+		}
+
+		var rgd v1alpha1.ResourceGraphDefinition
+		if err = yaml.Unmarshal(data, &rgd); err != nil {
+			return fmt.Errorf("failed to unmarshal ResourceGroupDefinition: %w", err)
+		}
+
+		if err = generateDiagram(&rgd); err != nil {
+			return fmt.Errorf("failed to generate diagram: %w", err)
+		}
+
+		return nil
+	},
+}
+
 func generateCRD(rgd *v1alpha1.ResourceGraphDefinition) error {
 	rgdGraph, err := createGraphBuilder(rgd)
 	if err != nil {
@@ -79,6 +124,83 @@ func generateCRD(rgd *v1alpha1.ResourceGraphDefinition) error {
 	fmt.Println(string(b))
 
 	return nil
+}
+
+func generateDiagram(rgd *v1alpha1.ResourceGraphDefinition) error {
+	rgdGraph, err := createGraphBuilder(rgd)
+	if err != nil {
+		return fmt.Errorf("failed to setup rgd graph: %w", err)
+	}
+
+	graph := charts.NewGraph()
+
+	// Graph layout
+	graph.SetGlobalOptions(
+		charts.WithInitializationOpts(opts.Initialization{
+			Width:  "70%",
+			Height: "90vh",
+		}),
+		charts.WithTitleOpts(opts.Title{
+			Title:    fmt.Sprintf("Resource Graph: %s", rgd.Name),
+			Subtitle: fmt.Sprintf("Topological Order: %v", rgdGraph.TopologicalOrder),
+			TitleStyle: &opts.TextStyle{
+				FontSize:   18,
+				FontWeight: "bold",
+			},
+			SubtitleStyle: &opts.TextStyle{
+				FontSize: 14,
+			},
+		}),
+		charts.WithLegendOpts(opts.Legend{
+			Show: opts.Bool(false),
+		}),
+	)
+
+	// Graph nodes
+	nodes := make([]opts.GraphNode, 0, len(rgdGraph.Resources))
+	for resourceName := range rgdGraph.Resources {
+		node := opts.GraphNode{
+			Name:       resourceName,
+			SymbolSize: 30.0,
+			ItemStyle: &opts.ItemStyle{
+				Color:       "#269103",
+				BorderColor: "#333",
+				BorderWidth: 1,
+			},
+		}
+		nodes = append(nodes, node)
+	}
+
+	// Graph links
+	links := make([]opts.GraphLink, 0)
+	for resourceName, resource := range rgdGraph.Resources {
+		for _, dependency := range resource.GetDependencies() {
+			link := opts.GraphLink{
+				Source: dependency,
+				Target: resourceName,
+				LineStyle: &opts.LineStyle{
+					Color: "#000",
+				},
+			}
+			links = append(links, link)
+		}
+	}
+
+	graph.AddSeries("resource", nodes, links).SetSeriesOptions(
+		charts.WithGraphChartOpts(
+			opts.GraphChart{
+				Force: &opts.GraphForce{
+					Repulsion: 5000,
+				},
+				Roam:           opts.Bool(true),
+				EdgeSymbol:     "arrow",
+				EdgeSymbolSize: []int{0, 7},
+			},
+		),
+	)
+
+	return graph.Render(os.Stdout)
+
 }
 
 func createGraphBuilder(rgd *v1alpha1.ResourceGraphDefinition) (*graph.Graph, error) {
@@ -130,5 +252,6 @@ func marshalObject(obj interface{}, outputFormat string) ([]byte, error) {
 
 func AddGenerateCommands(rootCmd *cobra.Command) {
 	generateCmd.AddCommand(generateCRDCmd)
+	generateCmd.AddCommand(generateDiagramCmd)
 	rootCmd.AddCommand(generateCmd)
 }
