@@ -519,6 +519,6 @@ func (a *Inspector) structExpressionToString(s *exprpb.Expr_CreateStruct) string
 }
 
 func isInternalIdentifier(name string) bool {
-	return name == "@result" || strings.HasPrefix(name, "$$")
+	return name == "@result" || strings.HasPrefix(name, "$$") || name == "iterators"
 }
 

@@ -57,6 +57,7 @@ func DefaultEnvironment(options ...EnvOption) (*cel.Env, error) {
 		cel.OptionalTypes(),
 		ext.Encoders(),
 		library.Random(),
+		cel.Variable("iterators", cel.AnyType),
 	}
 
 	opts := &envOptions{}
