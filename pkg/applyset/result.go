@@ -23,6 +23,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
+// AppliedObject is a wrapper around an ApplyableObject that contains the last applied object
+// It is used to track the applied object and any errors that occurred while applying it.
+// It is also used to check if the object has been mutated in the cluster as part of the apply operation.
 type AppliedObject struct {
 	ApplyableObject
 	LastApplied *unstructured.Unstructured
@@ -60,27 +63,24 @@ func (a *ApplyResult) Errors() error {
 }
 
 func (a *ApplyResult) pruneErrors() error {
-	errorsSeen := []error{}
+	var err error
 	for _, pruned := range a.PrunedObjects {
-		if pruned.Error != nil {
-			errorsSeen = append(errorsSeen, pruned.Error)
-		}
+		err = errors.Join(err, pruned.Error)
 	}
-	return errors.Join(errorsSeen...)
+	return err
+
 }
 
 func (a *ApplyResult) applyErrors() error {
-	errorsSeen := []error{}
+	var err error
 	if len(a.AppliedObjects) != a.DesiredCount {
-		errorsSeen = append(errorsSeen, fmt.Errorf("expected %d applied objects, got %d",
+		err = errors.Join(err, fmt.Errorf("expected %d applied objects, got %d",
 			a.DesiredCount, len(a.AppliedObjects)))
 	}
 	for _, applied := range a.AppliedObjects {
-		if applied.Error != nil {
-			errorsSeen = append(errorsSeen, applied.Error)
-		}
+		err = errors.Join(err, applied.Error)
 	}
-	return errors.Join(errorsSeen...)
+	return err
 }
 
 func (a *ApplyResult) AppliedUIDs() sets.Set[types.UID] {

@@ -1,4 +1,4 @@
-// Copyright 2023 The Kubernetes Authors.
+// Copyright 2025 The Kube Resource Orchestrator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,6 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+// Applylib has code copied over from:
+//   - kubectl pkg/cmd/apply/applyset.go
+//   - kubebuilder-declarative-pattern/applylib
+//   - Creating a simpler, self-contained version of the library that is purpose built for controllers.
+//   - KEP describing applyset:
+//     https://git.k8s.io/enhancements/keps/sig-cli/3659-kubectl-apply-prune#design-details-applyset-specification
 
 package applyset
 
@@ -26,12 +33,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/dynamic"
 )
-
-type ApplySetDeleteOptions struct {
-	CascadingStrategy metav1.DeletionPropagation
-	// DryRunStrategy    cmdutil.DryRunStrategy
-	GracePeriod int
-}
 
 // PruneObject is an apiserver object that should be deleted as part of prune.
 type PruneObject struct {

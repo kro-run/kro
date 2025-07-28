@@ -48,8 +48,8 @@ const (
 	ResourceStateWaitingForReadiness = "WAITING_FOR_READINESS"
 	ResourceStateUpdating            = "UPDATING"
 
-	FieldManagerForApplyset = "kro-applyset"
-	FieldManagerForLabeler  = "kro-labeller"
+	FieldManagerForApplyset = "kro.run/applyset"
+	FieldManagerForLabeler  = "kro.run/labeller"
 )
 
 var (
@@ -145,13 +145,15 @@ func (igr *instanceGraphReconciler) processLoad(
 	obj applyset.ApplyableObject,
 	observed *unstructured.Unstructured,
 ) error {
-	if observed != nil {
-		igr.runtime.SetResource(obj.ID, observed)
-		igr.updateResourceReadiness(obj.ID)
-		// Synchronize runtime state after each resource
-		if _, err := igr.runtime.Synchronize(); err != nil {
-			return fmt.Errorf("failed to synchronize after apply/prune: %w", err)
-		}
+	if observed == nil {
+		return nil
+	}
+
+	igr.runtime.SetResource(obj.ID, observed)
+	igr.updateResourceReadiness(obj.ID)
+	// Synchronize runtime state after each resource
+	if _, err := igr.runtime.Synchronize(); err != nil {
+		return fmt.Errorf("failed to synchronize after apply/prune: %w", err)
 	}
 	return nil
 }
@@ -182,8 +184,6 @@ func (igr *instanceGraphReconciler) reconcileInstance(ctx context.Context) error
 		igr.state.ResourceStates[resourceID] = &ResourceState{State: ResourceStatePending}
 	}
 
-	// TODO (barney-s):
-	// - inject logger
 	config := applyset.Config{
 		ToolLabels:         igr.instanceSubResourcesLabeler.Labels(),
 		FieldManager:       FieldManagerForApplyset,
@@ -419,7 +419,8 @@ func (igr *instanceGraphReconciler) finalizeDeletion(ctx context.Context) error 
 }
 
 // setManaged ensures the instance has the necessary finalizer and labels.
-func (igr *instanceGraphReconciler) setManaged(ctx context.Context, obj *unstructured.Unstructured, _ types.UID) (*unstructured.Unstructured, error) {
+func (igr *instanceGraphReconciler) setManaged(ctx context.Context,
+	obj *unstructured.Unstructured, _ types.UID) (*unstructured.Unstructured, error) {
 	if exist, _ := metadata.HasInstanceFinalizerUnstructured(obj); exist {
 		return obj, nil
 	}
@@ -445,7 +446,8 @@ func (igr *instanceGraphReconciler) setManaged(ctx context.Context, obj *unstruc
 
 	updated, err := igr.client.Resource(igr.gvr).
 		Namespace(obj.GetNamespace()).
-		Apply(ctx, instancePatch.GetName(), instancePatch, metav1.ApplyOptions{FieldManager: FieldManagerForLabeler, Force: false})
+		Apply(ctx, instancePatch.GetName(), instancePatch,
+			metav1.ApplyOptions{FieldManager: FieldManagerForLabeler, Force: true})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update managed state: %w", err)
 	}
@@ -480,7 +482,8 @@ func (igr *instanceGraphReconciler) setUnmanaged(
 
 	updated, err := igr.client.Resource(igr.gvr).
 		Namespace(obj.GetNamespace()).
-		Apply(ctx, instancePatch.GetName(), instancePatch, metav1.ApplyOptions{FieldManager: FieldManagerForLabeler, Force: true})
+		Apply(ctx, instancePatch.GetName(), instancePatch,
+			metav1.ApplyOptions{FieldManager: FieldManagerForLabeler, Force: true})
 	if err != nil {
 		return nil, fmt.Errorf("failed to update unmanaged state: %w", err)
 	}
