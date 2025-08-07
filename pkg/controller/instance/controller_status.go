@@ -16,10 +16,13 @@ package instance
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
+	"github.com/kro-run/kro/api/v1alpha1"
 	"github.com/kro-run/kro/pkg/apis"
 	"github.com/kro-run/kro/pkg/requeue"
 )
@@ -33,6 +36,50 @@ const (
 
 var instanceConditionTypes = apis.NewReadyConditions(InstanceManaged, GraphResolved, ResourcesReady)
 
+// unstructuredConditionAdapter adapts an unstructured.Unstructured to implement apis.Object
+type unstructuredConditionAdapter struct {
+	*unstructured.Unstructured
+}
+
+// GetConditions implements apis.Object interface
+func (u *unstructuredConditionAdapter) GetConditions() []v1alpha1.Condition {
+	if conditions, found, err := unstructured.NestedSlice(u.Object, "status", "conditions"); err == nil && found {
+		// Marshal the conditions slice to JSON and then unmarshal to []v1alpha1.Condition
+		conditionsJSON, err := json.Marshal(conditions)
+		if err != nil {
+			return []v1alpha1.Condition{}
+		}
+		
+		var result []v1alpha1.Condition
+		if err := json.Unmarshal(conditionsJSON, &result); err != nil {
+			return []v1alpha1.Condition{}
+		}
+		return result
+	}
+	return []v1alpha1.Condition{}
+}
+
+// SetConditions implements apis.Object interface
+func (u *unstructuredConditionAdapter) SetConditions(conditions []v1alpha1.Condition) {
+	// Marshal the conditions to JSON and then unmarshal to interface{} slice
+	conditionsJSON, err := json.Marshal(conditions)
+	if err != nil {
+		return // Fail silently - could log this in the future
+	}
+	
+	var conditionsInterface []interface{}
+	if err := json.Unmarshal(conditionsJSON, &conditionsInterface); err != nil {
+		return // Fail silently - could log this in the future
+	}
+	
+	unstructured.SetNestedSlice(u.Object, conditionsInterface, "status", "conditions")
+}
+
+// wrapInstance creates an adapter that allows unstructured instances to work with condition management
+func wrapInstance(instance *unstructured.Unstructured) *unstructuredConditionAdapter {
+	return &unstructuredConditionAdapter{Unstructured: instance}
+}
+
 // NewConditionsMarkerFor creates a marker to manage conditions and sub-conditions for instances.
 //
 // ```
@@ -41,8 +88,9 @@ var instanceConditionTypes = apis.NewReadyConditions(InstanceManaged, GraphResol
 //	├─ GraphResolved - Runtime graph created and all resources resolved
 //	└─ ResourcesReady - All resources are created and ready
 // ```
-func NewConditionsMarkerFor(o apis.Object) *ConditionsMarker {
-	return &ConditionsMarker{cs: instanceConditionTypes.For(o)}
+func NewConditionsMarkerFor(instance *unstructured.Unstructured) *ConditionsMarker {
+	wrapped := wrapInstance(instance)
+	return &ConditionsMarker{cs: instanceConditionTypes.For(wrapped)}
 }
 
 // A ConditionsMarker provides an API to mark conditions onto an instance as the controller does work.
@@ -92,14 +140,15 @@ func (igr *instanceGraphReconciler) prepareStatus() map[string]interface{} {
 
 	// Set status.state based on readiness
 	instance := igr.runtime.GetInstance()
-	if instanceConditionTypes.For(instance).IsRootReady() {
+	conditionSet := instanceConditionTypes.For(wrapInstance(instance))
+	if conditionSet.IsRootReady() {
 		status["state"] = InstanceStateActive
 	} else {
 		status["state"] = igr.state.State
 	}
 
 	// Get conditions from the instance (set by condition markers during reconciliation)
-	if conditions := instanceConditionTypes.For(instance).List(); len(conditions) > 0 {
+	if conditions := conditionSet.List(); len(conditions) > 0 {
 		conditionsInterface := make([]interface{}, len(conditions))
 		for i, condition := range conditions {
 			conditionsInterface[i] = map[string]interface{}{

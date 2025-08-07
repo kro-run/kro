@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -135,6 +136,10 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) error {
 	// runtime object in it's fields.
 	rgRuntime, err := c.rgd.NewGraphRuntime(instance)
 	if err != nil {
+		// Mark graph resolution failure and update status before returning error
+		mark := NewConditionsMarkerFor(instance)
+		mark.GraphNotResolved("failed to create runtime resource graph definition: %v", err)
+		c.updateInstanceStatusOnError(ctx, instance, mark)
 		return fmt.Errorf("failed to create runtime resource graph definition: %w", err)
 	}
 
@@ -147,6 +152,10 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) error {
 	// TODO(a-hilaly): client caching
 	executionClient, err := c.getExecutionClient(namespace)
 	if err != nil {
+		// Mark instance as not managed due to execution client failure
+		mark := NewConditionsMarkerFor(instance)
+		mark.InstanceNotManaged("failed to create execution client: %v", err)
+		c.updateInstanceStatusOnError(ctx, instance, mark)
 		return fmt.Errorf("failed to create execution client: %w", err)
 	}
 
@@ -268,4 +277,36 @@ func getServiceAccountUserName(namespace, serviceAccount string) (string, error)
 		return "", fmt.Errorf("namespace and service account must be provided")
 	}
 	return fmt.Sprintf("system:serviceaccount:%s:%s", namespace, serviceAccount), nil
+}
+
+// updateInstanceStatusOnError updates the instance status when errors occur in the main controller
+func (c *Controller) updateInstanceStatusOnError(ctx context.Context, instance *unstructured.Unstructured, mark *ConditionsMarker) {
+	// Prepare status with error conditions
+	wrapped := wrapInstance(instance)
+	conditionSet := instanceConditionTypes.For(wrapped)
+	
+	status := map[string]interface{}{
+		"state": InstanceStateError,
+	}
+	
+	if conditions := conditionSet.List(); len(conditions) > 0 {
+		conditionsInterface := make([]interface{}, len(conditions))
+		for i, condition := range conditions {
+			conditionsInterface[i] = map[string]interface{}{
+				"type":               string(condition.Type),
+				"status":             string(condition.Status),
+				"reason":             condition.Reason,
+				"message":            condition.Message,
+				"lastTransitionTime": condition.LastTransitionTime,
+				"observedGeneration": condition.ObservedGeneration,
+			}
+		}
+		status["conditions"] = conditionsInterface
+	}
+	
+	// Update status - ignore errors as this is best effort
+	instance.Object["status"] = status
+	_, _ = c.clientSet.Dynamic().Resource(c.gvr).
+		Namespace(instance.GetNamespace()).
+		UpdateStatus(ctx, instance, metav1.UpdateOptions{})
 }

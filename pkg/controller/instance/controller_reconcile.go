@@ -335,14 +335,21 @@ func (igr *instanceGraphReconciler) updateResource(
 // following the reverse topological order to respect dependencies.
 func (igr *instanceGraphReconciler) handleInstanceDeletion(ctx context.Context) error {
 	igr.log.V(1).Info("Beginning instance deletion process")
+	instance := igr.runtime.GetInstance()
+	mark := NewConditionsMarkerFor(instance)
+
+	// Mark resources as being deleted
+	mark.ResourcesInProgress("deleting resources in reverse topological order")
 
 	// Initialize deletion state for all resources
 	if err := igr.initializeDeletionState(); err != nil {
+		mark.ResourcesNotReady("failed to initialize deletion state: %v", err)
 		return fmt.Errorf("failed to initialize deletion state: %w", err)
 	}
 
 	// Delete resources in reverse order
 	if err := igr.deleteResourcesInOrder(ctx); err != nil {
+		mark.ResourcesNotReady("failed to delete resources: %v", err)
 		return err
 	}
 
@@ -446,10 +453,15 @@ func (igr *instanceGraphReconciler) finalizeDeletion(ctx context.Context) error 
 		}
 	}
 
-	// Remove finalizer from instance
+	// All resources are deleted, mark as ready for finalization
 	instance := igr.runtime.GetInstance()
+	mark := NewConditionsMarkerFor(instance)
+	mark.ResourcesReady() // All resources have been successfully deleted
+
+	// Remove finalizer from instance
 	patched, err := igr.setUnmanaged(ctx, instance)
 	if err != nil {
+		mark.InstanceNotManaged("failed to remove instance finalizer: %v", err)
 		return fmt.Errorf("failed to remove instance finalizer: %w", err)
 	}
 
