@@ -284,11 +284,11 @@ func (c *Controller) updateInstanceStatusOnError(ctx context.Context, instance *
 	// Prepare status with error conditions
 	wrapped := wrapInstance(instance)
 	conditionSet := instanceConditionTypes.For(wrapped)
-	
+
 	status := map[string]interface{}{
 		"state": InstanceStateError,
 	}
-	
+
 	if conditions := conditionSet.List(); len(conditions) > 0 {
 		conditionsInterface := make([]interface{}, len(conditions))
 		for i, condition := range conditions {
@@ -303,7 +303,7 @@ func (c *Controller) updateInstanceStatusOnError(ctx context.Context, instance *
 		}
 		status["conditions"] = conditionsInterface
 	}
-	
+
 	// Update status - ignore errors as this is best effort
 	instance.Object["status"] = status
 	_, _ = c.clientSet.Dynamic().Resource(c.gvr).

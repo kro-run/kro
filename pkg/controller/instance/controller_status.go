@@ -28,10 +28,10 @@ import (
 )
 
 const (
-	Ready            = "Ready"
-	InstanceManaged  = "InstanceManaged"
-	GraphResolved    = "GraphResolved"
-	ResourcesReady   = "ResourcesReady"
+	Ready           = "Ready"
+	InstanceManaged = "InstanceManaged"
+	GraphResolved   = "GraphResolved"
+	ResourcesReady  = "ResourcesReady"
 )
 
 var instanceConditionTypes = apis.NewReadyConditions(InstanceManaged, GraphResolved, ResourcesReady)
@@ -49,7 +49,7 @@ func (u *unstructuredConditionAdapter) GetConditions() []v1alpha1.Condition {
 		if err != nil {
 			return []v1alpha1.Condition{}
 		}
-		
+
 		var result []v1alpha1.Condition
 		if err := json.Unmarshal(conditionsJSON, &result); err != nil {
 			return []v1alpha1.Condition{}
@@ -66,12 +66,12 @@ func (u *unstructuredConditionAdapter) SetConditions(conditions []v1alpha1.Condi
 	if err != nil {
 		return // Fail silently - could log this in the future
 	}
-	
+
 	var conditionsInterface []interface{}
 	if err := json.Unmarshal(conditionsJSON, &conditionsInterface); err != nil {
 		return // Fail silently - could log this in the future
 	}
-	
+
 	unstructured.SetNestedSlice(u.Object, conditionsInterface, "status", "conditions")
 }
 
@@ -84,9 +84,11 @@ func wrapInstance(instance *unstructured.Unstructured) *unstructuredConditionAda
 //
 // ```
 // Ready
+//
 //	├─ InstanceManaged - Instance finalizers and labels are properly set
 //	├─ GraphResolved - Runtime graph created and all resources resolved
 //	└─ ResourcesReady - All resources are created and ready
+//
 // ```
 func NewConditionsMarkerFor(instance *unstructured.Unstructured) *ConditionsMarker {
 	wrapped := wrapInstance(instance)
@@ -132,7 +134,6 @@ func (m *ConditionsMarker) ResourcesNotReady(format string, a ...any) {
 func (m *ConditionsMarker) ResourcesInProgress(format string, a ...any) {
 	m.cs.SetUnknownWithReason(ResourcesReady, "ResourcesInProgress", fmt.Sprintf(format, a...))
 }
-
 
 // prepareStatus creates the status object for the instance based on current state.
 func (igr *instanceGraphReconciler) prepareStatus() map[string]interface{} {
@@ -183,7 +184,6 @@ func (igr *instanceGraphReconciler) getResolvedStatus() map[string]interface{} {
 
 	return status
 }
-
 
 // patchInstanceStatus updates the status subresource of the instance.
 func (igr *instanceGraphReconciler) patchInstanceStatus(ctx context.Context, status map[string]interface{}) error {

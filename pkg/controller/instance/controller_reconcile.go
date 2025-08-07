@@ -153,7 +153,7 @@ func (igr *instanceGraphReconciler) reconcileInstance(ctx context.Context) error
 // labels and managed state.
 func (igr *instanceGraphReconciler) setupInstance(ctx context.Context, instance *unstructured.Unstructured) error {
 	mark := NewConditionsMarkerFor(instance)
-	
+
 	patched, err := igr.setManaged(ctx, instance, instance.GetUID())
 	if err != nil {
 		mark.InstanceNotManaged("failed to setup instance: %v", err)
@@ -165,7 +165,7 @@ func (igr *instanceGraphReconciler) setupInstance(ctx context.Context, instance 
 		igr.runtime.SetInstance(patched)
 		mark = NewConditionsMarkerFor(patched)
 	}
-	
+
 	mark.InstanceManaged()
 	return nil
 }
