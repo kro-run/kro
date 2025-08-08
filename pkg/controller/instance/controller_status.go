@@ -152,18 +152,14 @@ func (igr *instanceGraphReconciler) prepareStatus() map[string]interface{} {
 
 	// Get conditions from the instance (set by condition markers during reconciliation)
 	if conditions := conditionSet.List(); len(conditions) > 0 {
-		conditionsInterface := make([]interface{}, len(conditions))
-		for i, condition := range conditions {
-			conditionsInterface[i] = map[string]interface{}{
-				"type":               string(condition.Type),
-				"status":             string(condition.Status),
-				"reason":             condition.Reason,
-				"message":            condition.Message,
-				"lastTransitionTime": condition.LastTransitionTime,
-				"observedGeneration": condition.ObservedGeneration,
+		// Marshal conditions to JSON and then unmarshal to []interface{} to get map[string]interface{} representation
+		conditionsJSON, err := json.Marshal(conditions)
+		if err == nil {
+			var conditionsInterface []interface{}
+			if err := json.Unmarshal(conditionsJSON, &conditionsInterface); err == nil {
+				status["conditions"] = conditionsInterface
 			}
 		}
-		status["conditions"] = conditionsInterface
 	}
 
 	return status
