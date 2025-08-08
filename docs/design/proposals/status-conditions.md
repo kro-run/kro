@@ -288,11 +288,11 @@ Things to note:
         reconciliation code rather than setting the entire condition block all
         together. Further letting the reconciler be testable and independent in
         of itself.
-- [ ] [ResourceGraphDefinition] Delete the Condition struct from
+- [x] [ResourceGraphDefinition] Delete the Condition struct from
       api/v1alpha1/conditions.go. We will use metav1’s Condition from upstream
       and accept the stricter schema validation that comes with it (also what
       the condition manager allows us to centralize).
-  - [ ] This adds ObservedGeneration to Conditions explicitly.
+  - [x] This adds ObservedGeneration to Conditions explicitly.
 - [x] [ResourceGraphDefinition] Watch and react to Resource Graph CRD changes,
       especially the “Accepted” status of a CRD.
 - [x] [Instance] Document the large chunks of work that the reconciler does,
@@ -305,12 +305,12 @@ Things to note:
   - [ ] We might also need to support defining the polarity of success, which is
         a really good reason to fork the condition managers, as they don't
         support this at the moment.
-- [ ] [Instance] Introduce the Ready condition as a top-level condition for all
+- [x] [Instance] Introduce the Ready condition as a top-level condition for all
       Instance schemas.
-- [ ] [Instance] Replace InstanceSynced with Ready, managed by a condition manager.
-- [ ] [Instance] Move the conditions logic into Mark* and Propagate* methods,
+- [x] [Instance] Replace InstanceSynced with Ready, managed by a condition manager.
+- [x] [Instance] Move the conditions logic into Mark* and Propagate* methods,
       isolating API interaction logic from reconciliation logic.
-- [ ] [Instance] Create instance condition manager similar to RGD implementation.
+- [x] [Instance] Create instance condition manager similar to RGD implementation.
 
 There is likely more work that is not listed above but will require discovery.
 
@@ -322,5 +322,6 @@ There is likely more work that is not listed above but will require discovery.
 
 ## Discussion and notes
 
-- Scott Nichols Proposed this on March 24, 2024 via
+- Scott Nichols Proposed this on March 24, 2025 via
   [Google Doc](https://docs.google.com/document/d/1-Wc8m9LH6wq0URIPqzdpHc_MfQzHfScP5PSzzFCLaxw/edit?tab=t.0)
+- Updated Aug 7, 2025

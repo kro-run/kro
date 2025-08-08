@@ -16,11 +16,11 @@ package v1alpha1
 
 import (
 	"encoding/json"
-	"k8s.io/utils/ptr"
 	"testing"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 func TestCondition_GetStatus(t *testing.T) {

@@ -15,11 +15,11 @@
 package instance
 
 import (
-	"k8s.io/utils/ptr"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 
 	"github.com/kro-run/kro/api/v1alpha1"
@@ -126,6 +126,7 @@ kind: MyInstance
 metadata:
   name: test-instance
   generation: 1
+  creationTimestamp: "2025-08-08T15:30:00Z"
 spec:
   replicas: 1
 status:
