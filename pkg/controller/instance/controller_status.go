@@ -72,7 +72,9 @@ func (u *unstructuredConditionAdapter) SetConditions(conditions []v1alpha1.Condi
 		return // Fail silently - could log this in the future
 	}
 
-	unstructured.SetNestedSlice(u.Object, conditionsInterface, "status", "conditions")
+	if err := unstructured.SetNestedSlice(u.Object, conditionsInterface, "status", "conditions"); err != nil {
+		return // Fail silently - could log this in the future
+	}
 }
 
 // wrapInstance creates an adapter that allows unstructured instances to work with condition management

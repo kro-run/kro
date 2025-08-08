@@ -78,6 +78,27 @@ var _ = Describe("Instance Conditions", func() {
 			err := env.Client.Get(ctx, types.NamespacedName{Name: rgd.Name}, rgd)
 			g.Expect(err).ToNot(HaveOccurred())
 
+			// Debug: print all conditions
+			GinkgoWriter.Printf("RGD %s conditions:\n", rgd.Name)
+			for _, cond := range rgd.Status.Conditions {
+				GinkgoWriter.Printf("  - Type: %s, Status: %s, Reason: %s, Message: %s\n",
+					cond.Type, cond.Status,
+					func() string {
+						if cond.Reason != nil {
+							return *cond.Reason
+						} else {
+							return "nil"
+						}
+					}(),
+					func() string {
+						if cond.Message != nil {
+							return *cond.Message
+						} else {
+							return "nil"
+						}
+					}())
+			}
+
 			// Check that RGD has Ready condition
 			var readyCondition *krov1alpha1.Condition
 			for _, cond := range rgd.Status.Conditions {
@@ -86,14 +107,17 @@ var _ = Describe("Instance Conditions", func() {
 					break
 				}
 			}
-			g.Expect(readyCondition).ToNot(BeNil())
-			g.Expect(readyCondition.Status).To(Equal(metav1.ConditionTrue))
+			g.Expect(readyCondition).ToNot(BeNil(), "Ready condition should exist")
+			g.Expect(readyCondition.Status).To(Equal(metav1.ConditionTrue), "Ready condition should be True")
 		}, 30*time.Second, time.Second).Should(Succeed())
+
+		// Wait a bit more for CRD to be fully registered in API discovery
+		time.Sleep(5 * time.Second)
 
 		// Create instance
 		instance := &unstructured.Unstructured{
 			Object: map[string]interface{}{
-				"apiVersion": "v1alpha1",
+				"apiVersion": fmt.Sprintf("%s/%s", krov1alpha1.KRODomainName, "v1alpha1"),
 				"kind":       "TestInstanceConditions",
 				"metadata": map[string]interface{}{
 					"name":      "test-instance-conditions",
@@ -138,7 +162,7 @@ var _ = Describe("Instance Conditions", func() {
 			g.Expect(readyCondition["reason"]).To(Equal("Ready"), "Ready reason should be Ready")
 
 			// Validate observedGeneration is set correctly
-			expectedGeneration := float64(instance.GetGeneration())
+			expectedGeneration := instance.GetGeneration()
 			g.Expect(readyCondition["observedGeneration"]).To(Equal(expectedGeneration), "Ready observedGeneration should match")
 
 			// Validate lastTransitionTime is set
@@ -199,10 +223,13 @@ var _ = Describe("Instance Conditions", func() {
 			g.Expect(readyCondition.Status).To(Equal(metav1.ConditionTrue))
 		}, 30*time.Second, time.Second).Should(Succeed())
 
+		// Wait a bit more for CRD to be fully registered in API discovery
+		time.Sleep(5 * time.Second)
+
 		// Create instance
 		instance := &unstructured.Unstructured{
 			Object: map[string]interface{}{
-				"apiVersion": "v1alpha1",
+				"apiVersion": fmt.Sprintf("%s/%s", krov1alpha1.KRODomainName, "v1alpha1"),
 				"kind":       "TestInstanceDeletion",
 				"metadata": map[string]interface{}{
 					"name":      "test-instance-deletion",

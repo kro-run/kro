@@ -15,14 +15,20 @@
 package instance
 
 import (
+	"context"
+	"encoding/json"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic/fake"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 
 	"github.com/kro-run/kro/api/v1alpha1"
+	krofake "github.com/kro-run/kro/pkg/client/fake"
 )
 
 func TestConditionsMarker(t *testing.T) {
@@ -478,5 +484,157 @@ status:
 	}
 	if cond.Status != metav1.ConditionTrue {
 		t.Errorf("Expected status True, got %s", cond.Status)
+	}
+}
+
+func TestUpdateInstanceStatusOnErrorPreservesConditions(t *testing.T) {
+	// Create an instance with existing conditions including unknown ones
+	instanceYAML := `
+apiVersion: example.com/v1
+kind: MyInstance
+metadata:
+  name: test-instance
+  generation: 1
+  creationTimestamp: "2025-08-08T15:30:00Z"
+  namespace: test-namespace
+spec:
+  replicas: 1
+status:
+  conditions:
+  - type: InstanceManaged
+    status: "True"
+    reason: "Managed"
+    message: "instance is properly managed"
+    lastTransitionTime: "2025-08-08T15:30:00Z"
+    observedGeneration: 1
+  - type: GraphResolved
+    status: "False"  
+    reason: "ValidationError"
+    message: "graph validation failed"
+    lastTransitionTime: "2025-08-08T15:30:01Z"
+    observedGeneration: 1
+  - type: ResourcesReady
+    status: "Unknown"
+    reason: "ResourcesInProgress"
+    message: "processing 3 resources"
+    lastTransitionTime: "2025-08-08T15:30:02Z"
+    observedGeneration: 1
+  - type: CustomCondition
+    status: "Unknown"
+    reason: "CustomReason"
+    message: "custom unknown condition"
+    lastTransitionTime: "2025-08-08T15:30:03Z"
+    observedGeneration: 1
+  state: Active
+`
+
+	var instance unstructured.Unstructured
+	if err := yaml.Unmarshal([]byte(instanceYAML), &instance.Object); err != nil {
+		t.Fatalf("Failed to parse YAML: %v", err)
+	}
+
+	// Set up fake dynamic client and fake client set
+	scheme := runtime.NewScheme()
+	fakeDynamicClient := fake.NewSimpleDynamicClient(scheme, &instance)
+	fakeClientSet := krofake.NewFakeSet(fakeDynamicClient)
+
+	// Mock controller with fake client setup
+	testGVR := schema.GroupVersionResource{
+		Group:    "example.com",
+		Version:  "v1",
+		Resource: "myinstances",
+	}
+
+	controller := &Controller{
+		clientSet: fakeClientSet,
+		gvr:       testGVR,
+	}
+
+	// Call updateInstanceStatusOnError
+	controller.updateInstanceStatusOnError(context.Background(), &instance)
+
+	// Verify the status was updated to error state
+	status, ok := instance.Object["status"].(map[string]interface{})
+	if !ok {
+		t.Fatal("Status should be a map")
+	}
+
+	state, ok := status["state"].(string)
+	if !ok || state != "ERROR" {
+		t.Errorf("Expected state to be 'ERROR', got %v", state)
+	}
+
+	// Verify conditions are preserved
+	conditionsInterface, ok := status["conditions"].([]interface{})
+	if !ok {
+		t.Fatal("Conditions should be present as a slice")
+	}
+
+	// Convert back to structured conditions for easier testing
+	conditionsJSON, err := json.Marshal(conditionsInterface)
+	if err != nil {
+		t.Fatalf("Failed to marshal conditions: %v", err)
+	}
+
+	var conditions []v1alpha1.Condition
+	if err := json.Unmarshal(conditionsJSON, &conditions); err != nil {
+		t.Fatalf("Failed to unmarshal conditions: %v", err)
+	}
+
+	// Convert to map for easier access
+	foundConditions := make(map[string]v1alpha1.Condition)
+	for _, cond := range conditions {
+		foundConditions[string(cond.Type)] = cond
+	}
+
+	// Check that known conditions are preserved
+	if instanceManaged, exists := foundConditions["InstanceManaged"]; exists {
+		if instanceManaged.Status != metav1.ConditionTrue {
+			t.Errorf("Expected InstanceManaged to remain True, got %s", instanceManaged.Status)
+		}
+		if instanceManaged.Reason == nil || *instanceManaged.Reason != "Managed" {
+			t.Errorf("Expected InstanceManaged reason to be preserved")
+		}
+	} else {
+		t.Error("InstanceManaged condition should be preserved")
+	}
+
+	if graphResolved, exists := foundConditions["GraphResolved"]; exists {
+		if graphResolved.Status != metav1.ConditionFalse {
+			t.Errorf("Expected GraphResolved to remain False, got %s", graphResolved.Status)
+		}
+		if graphResolved.Reason == nil || *graphResolved.Reason != "ValidationError" {
+			t.Errorf("Expected GraphResolved reason to be preserved")
+		}
+	} else {
+		t.Error("GraphResolved condition should be preserved")
+	}
+
+	if resourcesReady, exists := foundConditions["ResourcesReady"]; exists {
+		if resourcesReady.Status != metav1.ConditionUnknown {
+			t.Errorf("Expected ResourcesReady to remain Unknown, got %s", resourcesReady.Status)
+		}
+		if resourcesReady.Reason == nil || *resourcesReady.Reason != "ResourcesInProgress" {
+			t.Errorf("Expected ResourcesReady reason to be preserved")
+		}
+	} else {
+		t.Error("ResourcesReady condition should be preserved")
+	}
+
+	// The Ready condition should be computed based on the dependents
+	if ready, exists := foundConditions["Ready"]; exists {
+		// Since GraphResolved is False, Ready should be False (but it might be Unknown during initialization)
+		if ready.Status != metav1.ConditionFalse && ready.Status != metav1.ConditionUnknown {
+			t.Errorf("Expected Ready to be False or Unknown due to GraphResolved being False, got %s", ready.Status)
+		}
+	}
+
+	// CustomCondition WILL be preserved since condition.For() preserves existing conditions
+	// and adds our managed conditions. This is actually correct behavior - we preserve existing state
+	// The key test is that our known conditions are preserved with their correct values
+
+	t.Logf("Found %d conditions after updateInstanceStatusOnError", len(conditions))
+	for _, cond := range conditions {
+		t.Logf("Condition: %s = %s (reason: %v)", cond.Type, cond.Status, cond.Reason)
 	}
 }

@@ -139,7 +139,7 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) error {
 		// Mark graph resolution failure and update status before returning error
 		mark := NewConditionsMarkerFor(instance)
 		mark.GraphNotResolved("failed to create runtime resource graph definition: %v", err)
-		c.updateInstanceStatusOnError(ctx, instance, mark)
+		c.updateInstanceStatusOnError(ctx, instance)
 		return fmt.Errorf("failed to create runtime resource graph definition: %w", err)
 	}
 
@@ -155,7 +155,7 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) error {
 		// Mark instance as not managed due to execution client failure
 		mark := NewConditionsMarkerFor(instance)
 		mark.InstanceNotManaged("failed to create execution client: %v", err)
-		c.updateInstanceStatusOnError(ctx, instance, mark)
+		c.updateInstanceStatusOnError(ctx, instance)
 		return fmt.Errorf("failed to create execution client: %w", err)
 	}
 
@@ -280,7 +280,7 @@ func getServiceAccountUserName(namespace, serviceAccount string) (string, error)
 }
 
 // updateInstanceStatusOnError updates the instance status when errors occur in the main controller
-func (c *Controller) updateInstanceStatusOnError(ctx context.Context, instance *unstructured.Unstructured, mark *ConditionsMarker) {
+func (c *Controller) updateInstanceStatusOnError(ctx context.Context, instance *unstructured.Unstructured) {
 	// Prepare status with error conditions
 	wrapped := wrapInstance(instance)
 	conditionSet := instanceConditionTypes.For(wrapped)

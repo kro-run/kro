@@ -214,7 +214,8 @@ var _ = Describe("DeploymentService", func() {
 			// Validate Ready condition
 			g.Expect(readyCondition).ToNot(BeNil(), "Ready condition should be present")
 			g.Expect(readyCondition["status"]).To(Equal("True"), "Ready condition should be True")
-			g.Expect(readyCondition["observedGeneration"]).To(Equal(instance.GetGeneration()), "Ready observedGeneration should match instance generation")
+			g.Expect(readyCondition["observedGeneration"]).To(Equal(instance.GetGeneration()),
+				"Ready observedGeneration should match instance generation")
 		}, 20*time.Second, time.Second).Should(Succeed())
 
 		// Delete instance
