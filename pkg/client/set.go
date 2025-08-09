@@ -46,6 +46,9 @@ type SetInterface interface {
 
 	// WithImpersonation returns a new client that impersonates the given user
 	WithImpersonation(user string) (SetInterface, error)
+
+	RESTMapper() meta.RESTMapper
+	SetRESTMapper(restMapper meta.RESTMapper)
 }
 
 // Set provides a unified interface for different Kubernetes clients
@@ -149,11 +152,6 @@ func (c *Set) APIExtensionsV1() apiextensionsv1.ApiextensionsV1Interface {
 // RESTConfig returns a copy of the underlying REST config
 func (c *Set) RESTConfig() *rest.Config {
 	return rest.CopyConfig(c.config)
-}
-
-// RESTMapper returns the REST mapper
-func (c *Set) RESTMapper() meta.RESTMapper {
-	return c.restMapper
 }
 
 // RESTMapper returns the REST mapper

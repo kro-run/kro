@@ -49,6 +49,53 @@ func (t ToolingID) String() string {
 	return fmt.Sprintf("%s/%s", t.Name, t.Version)
 }
 
+/*
+The Set interface provides methods for:
+  - Add    - Add an object to the set
+  - Apply  - Apply objects in the set to the cluster along with pruning
+  - DryRun - Dry run calls the kubernetes API with dryrun flag set to true.
+    No actual resources are created or pruned.
+
+Add() is used to add object to the apply Set.
+It takes unstructured object.
+It does a get from the cluster to note the resource-version before apply.
+
+Apply() method applies the objects in the set to a Kubernetes cluster. If
+the prune parameter is true, any objects that were previously applied but are
+no longer in the set will be deleted from the cluster.
+
+DryRun() method can be used to see what changes would be made without actually making them.
+
+Example Usage:
+
+	// Create an ApplySet
+	// aset, err := applyset.New(parent, restMapper, dynamicClient, applySetConfig)
+
+	// Add a ConfigMap to the ApplySet
+	// configMap := &unstructured.Unstructured{ ... }
+	err = aset.Add(context.TODO(), applyset.ApplyableObject{
+		Unstructured: configMap,
+		ID:  "my-config-map", // optional
+	})
+	if err != nil {
+		log.Fatalf("Failed to add object to ApplySet: %v", err)
+	}
+
+	// Apply the changes to the cluster (or dry-run)
+	// To apply:
+	result, err := aset.Apply(context.TODO(), true) // true to enable pruning
+	// or dry-run:
+	// result, err := aset.DryRun(context.TODO(), true)
+	if err != nil {
+		log.Fatalf("Failed to apply/dry-run ApplySet: %v", err)
+	}
+
+	if result.Errors() != nil {
+		fmt.Printf("ApplySet completed with errors: %v\n", result.Errors())
+	} else {
+		fmt.Println("ApplySet completed successfully (or dry-run successful).")
+	}
+*/
 type Set interface {
 	Add(ctx context.Context, obj ApplyableObject) error
 	Apply(ctx context.Context, prune bool) (*ApplyResult, error)
@@ -67,8 +114,43 @@ type Config struct {
 	BeforePruneCallback func(obj PrunedObject) error
 }
 
-// New creates a new ApplySet
-// parent object is expected to be the current one existing in the cluster
+/*
+New creates a new ApplySet
+parent object is expected to be the current one existing in the cluster
+Use New() to create an apply Set. This function takes the parent object,
+a RESTMapper, a dynamic client, and a configuration object. The parent
+object is the object that "owns" the set of resources being applied.
+
+Example usage:
+
+		// Set up Kubernetes client and RESTMapper
+		// dynamicClient = ...
+		// restMapper = ...
+
+		// Define a parent. The parent should exist in the cluster
+		// Can be any Kubernetes resource even a custom resource instance
+		parent := &unstructured.Unstructured{ Object: map[string]interface{}{} } }
+		parent.SetGroupVersionKind(schema.GroupVersionKind{Group: "example.com", Version: "v1", Kind: "MyCustomResource"})
+		parent.SetName("somename")
+
+	    // ApplySet configuration
+		applySetConfig := applyset.Config{
+			// concats the name and version and adds it as an annotatiuon
+			// https://kubernetes.io/docs/reference/using-api/server-side-apply/#managers
+			ToolingID:    applyset.ToolingID{Name: "my-controller", Version: "v1.0.0"},
+
+			// Provide an identifier which is used as field manager for server side apply
+			// https://kubernetes.io/docs/reference/using-api/server-side-apply/#managers
+			FieldManager: "my-controller",
+
+			// Inject your logger
+			Log:          logr.Discard(), // Use a real logger in production
+		}
+
+		// Create an ApplySet
+		aset, err := applyset.New(parent, restMapper, dynamicClient, applySetConfig)
+		// if err != nil { ...  }
+*/
 func New(
 	parent *unstructured.Unstructured,
 	restMapper meta.RESTMapper,

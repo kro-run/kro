@@ -78,8 +78,6 @@ type Controller struct {
 	gvr schema.GroupVersionResource
 	// client holds the dynamic client to use for interacting with the Kubernetes API.
 	clientSet kroclient.SetInterface
-    // restMapper is a REST mapper for the Kubernetes API server
-	restMapper meta.RESTMappe	
 	// rgd is a read-only reference to the Graph that the controller is
 	// managing instances for.
 	// TODO: use a read-only interface for the ResourceGraphDefinition

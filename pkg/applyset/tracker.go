@@ -44,7 +44,10 @@ type Applyable interface {
 type ApplyableObject struct {
 	*unstructured.Unstructured
 
+	// Optional
 	// User provided unique identifier for the object.
+	// If present a uniqeness check is done when adding
+	// It is opaque and is passed in the callbacks as is
 	ID string
 
 	// Lifecycle hints
@@ -104,12 +107,12 @@ func (t *tracker) Add(obj ApplyableObject) error {
 	// TODO(barney-s): Do we need to care about client side uniqueness?
 	// We could just not take the ID (opaque string) and let user deal with mapping
 	// GVKNN to their ID. Adding a todo here to revisit this.
-
-	// client side uniqueness check
-	if _, found := t.clientIDs[obj.ID]; found {
-		return fmt.Errorf("duplicate object ID %v", obj.ID)
+	if obj.ID != "" {
+		if _, found := t.clientIDs[obj.ID]; found {
+			return fmt.Errorf("duplicate object ID %v", obj.ID)
+		}
+		t.clientIDs[obj.ID] = true
 	}
-	t.clientIDs[obj.ID] = true
 
 	// Ensure the object is marshallable
 	if _, err := json.Marshal(obj); err != nil {

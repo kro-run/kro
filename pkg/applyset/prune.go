@@ -1,3 +1,4 @@
+// Copyright 2023 The Kubernetes Authors.
 // Copyright 2025 The Kube Resource Orchestrator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -101,9 +102,8 @@ func (a *applySet) FindAllObjectsToPrune(
 			results, err := a.findObjectsToPrune(ctx, dynamicClient, visitedUIDs, task.namespace, task.restMapping)
 			if err != nil {
 				return fmt.Errorf("listing %v objects for pruning: %w", task.restMapping.GroupVersionKind.String(), err)
-			} else {
-				task.results = results
 			}
+			task.results = results
 			return nil
 		})
 	}

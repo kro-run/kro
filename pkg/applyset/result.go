@@ -1,4 +1,5 @@
 // Copyright 2025 The Kube Resource Orchestrator Authors
+// Copyright 2022 The Kubernetes Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,6 +12,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+// Derived from: https://github.com/kubernetes-sigs/kubebuilder-declarative-pattern/blob/master/applylib/applyset/results.go
 
 package applyset
 
@@ -52,6 +55,11 @@ type PrunedObject struct {
 	Error error
 }
 
+// ApplyResult summarizes the results of an apply operation
+// It returns a list of applied and pruned objects
+// AppliedObject has both the input object and the result of the apply operation
+// Any errors returned by the apply call is also recorded in it.
+// PrunedObject records any error returned by the delete call.
 type ApplyResult struct {
 	DesiredCount   int
 	AppliedObjects []AppliedObject
