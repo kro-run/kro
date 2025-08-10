@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/utils/ptr"
 )
 
 func TestBuildOpenAPISchema(t *testing.T) {
@@ -372,6 +373,30 @@ func TestBuildOpenAPISchema(t *testing.T) {
 			},
 			want:    nil,
 			wantErr: true,
+		},
+		{
+			name: "Invalid marker on non-object type",
+			obj: map[string]interface{}{
+				"invalidField": "string | x-kubernetes-preserve-unknown-fields=true",
+			},
+			want:    nil,
+			wantErr: true,
+		},
+		{
+			name: "Object with preserve marker",
+			obj: map[string]interface{}{
+				"values": "object | x-kubernetes-preserve-unknown-fields=true",
+			},
+			want: &extv1.JSONSchemaProps{
+				Type: "object",
+				Properties: map[string]extv1.JSONSchemaProps{
+					"values": {
+						Type:                   "object",
+						XPreserveUnknownFields: ptr.To(true),
+					},
+				},
+			},
+			wantErr: false,
 		},
 		{
 			name: "Simple string validation",
