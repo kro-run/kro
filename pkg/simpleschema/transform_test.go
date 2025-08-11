@@ -375,17 +375,9 @@ func TestBuildOpenAPISchema(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "Invalid marker on non-object type",
+			name: "Object with unknown fields",
 			obj: map[string]interface{}{
-				"invalidField": "string | x-kubernetes-preserve-unknown-fields=true",
-			},
-			want:    nil,
-			wantErr: true,
-		},
-		{
-			name: "Object with preserve marker",
-			obj: map[string]interface{}{
-				"values": "object | x-kubernetes-preserve-unknown-fields=true",
+				"values": "any",
 			},
 			want: &extv1.JSONSchemaProps{
 				Type: "object",
@@ -395,6 +387,41 @@ func TestBuildOpenAPISchema(t *testing.T) {
 						XPreserveUnknownFields: ptr.To(true),
 					},
 				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Object with unknown fields in combination with required marker",
+			obj: map[string]interface{}{
+				"values": "any | required=true",
+			},
+			want: &extv1.JSONSchemaProps{
+				Type: "object",
+				Properties: map[string]extv1.JSONSchemaProps{
+					"values": {
+						Type:                   "object",
+						XPreserveUnknownFields: ptr.To(true),
+					},
+				},
+				Required: []string{"values"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Object with unknown fields in combination with default marker",
+			obj: map[string]interface{}{
+				"values": "any | default={\"a\": \"b\"}",
+			},
+			want: &extv1.JSONSchemaProps{
+				Type: "object",
+				Properties: map[string]extv1.JSONSchemaProps{
+					"values": {
+						Type:                   "object",
+						XPreserveUnknownFields: ptr.To(true),
+						Default:                &extv1.JSON{Raw: []byte("{\"a\": \"b\"}")},
+					},
+				},
+				Default: &extv1.JSON{Raw: []byte("{}")},
 			},
 			wantErr: false,
 		},

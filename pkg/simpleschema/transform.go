@@ -29,7 +29,7 @@ const (
 	keyTypeInteger = string(AtomicTypeInteger)
 	keyTypeBoolean = string(AtomicTypeBool)
 	keyTypeNumber  = "number"
-	keyTypeObject  = "object"
+	keyTypeAny     = "any"
 )
 
 // A predefinedType is a type that is predefined in the schema.
@@ -128,8 +128,11 @@ func (tf *transformer) parseFieldSchema(key, fieldValue string, parentSchema *ex
 
 	fieldJSONSchemaProps := &extv1.JSONSchemaProps{}
 
-	if isAtomicType(fieldType) || fieldType == keyTypeObject {
+	if isAtomicType(fieldType) {
 		fieldJSONSchemaProps.Type = fieldType
+	} else if fieldType == keyTypeAny {
+		fieldJSONSchemaProps.Type = "object"
+		fieldJSONSchemaProps.XPreserveUnknownFields = ptr.To(true)
 	} else if isCollectionType(fieldType) {
 		if isMapType(fieldType) {
 			fieldJSONSchemaProps, err = tf.handleMapType(key, fieldType)
@@ -298,15 +301,6 @@ func (tf *transformer) applyMarkers(schema *extv1.JSONSchemaProps, markers []*Ma
 			}
 			if len(enumJSONValues) > 0 {
 				schema.Enum = enumJSONValues
-			}
-		case MarkerTypePreserve:
-			switch schema.Type {
-			case keyTypeObject:
-				schema.XPreserveUnknownFields = ptr.To(true)
-			default:
-				{
-					return fmt.Errorf("x-kubernetes-preserve-unknown-fields only supported for object type, got type: %s", schema.Type)
-				}
 			}
 		}
 	}

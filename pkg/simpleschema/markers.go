@@ -55,14 +55,12 @@ const (
 	MarkerTypeValidation MarkerType = "validation"
 	// MarkerTypeEnum represents the `enum` marker.
 	MarkerTypeEnum MarkerType = "enum"
-	// MarkerTypePreserve represents the 'x-kubernetes-preserve-unknown-fields' marker.
-	MarkerTypePreserve MarkerType = "x-kubernetes-preserve-unknown-fields"
 )
 
 func markerTypeFromString(s string) (MarkerType, error) {
 	switch MarkerType(s) {
 	case MarkerTypeRequired, MarkerTypeDefault, MarkerTypeDescription,
-		MarkerTypeMinimum, MarkerTypeMaximum, MarkerTypeValidation, MarkerTypeEnum, MarkerTypePreserve:
+		MarkerTypeMinimum, MarkerTypeMaximum, MarkerTypeValidation, MarkerTypeEnum:
 		return MarkerType(s), nil
 	default:
 		return "", fmt.Errorf("unknown marker type: %s", s)
