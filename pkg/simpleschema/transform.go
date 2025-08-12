@@ -29,7 +29,7 @@ const (
 	keyTypeInteger = string(AtomicTypeInteger)
 	keyTypeBoolean = string(AtomicTypeBool)
 	keyTypeNumber  = "number"
-	keyTypeAny     = "any"
+	keyTypeObject  = "object"
 )
 
 // A predefinedType is a type that is predefined in the schema.
@@ -130,8 +130,8 @@ func (tf *transformer) parseFieldSchema(key, fieldValue string, parentSchema *ex
 
 	if isAtomicType(fieldType) {
 		fieldJSONSchemaProps.Type = fieldType
-	} else if fieldType == keyTypeAny {
-		fieldJSONSchemaProps.Type = "object"
+	} else if fieldType == keyTypeObject {
+		fieldJSONSchemaProps.Type = fieldType
 		fieldJSONSchemaProps.XPreserveUnknownFields = ptr.To(true)
 	} else if isCollectionType(fieldType) {
 		if isMapType(fieldType) {

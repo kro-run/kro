@@ -377,7 +377,7 @@ func TestBuildOpenAPISchema(t *testing.T) {
 		{
 			name: "Object with unknown fields",
 			obj: map[string]interface{}{
-				"values": "any",
+				"values": "object",
 			},
 			want: &extv1.JSONSchemaProps{
 				Type: "object",
@@ -393,7 +393,7 @@ func TestBuildOpenAPISchema(t *testing.T) {
 		{
 			name: "Object with unknown fields in combination with required marker",
 			obj: map[string]interface{}{
-				"values": "any | required=true",
+				"values": "object | required=true",
 			},
 			want: &extv1.JSONSchemaProps{
 				Type: "object",
@@ -410,7 +410,7 @@ func TestBuildOpenAPISchema(t *testing.T) {
 		{
 			name: "Object with unknown fields in combination with default marker",
 			obj: map[string]interface{}{
-				"values": "any | default={\"a\": \"b\"}",
+				"values": "object | default={\"a\": \"b\"}",
 			},
 			want: &extv1.JSONSchemaProps{
 				Type: "object",
