@@ -81,9 +81,12 @@ type Controller struct {
 	// managing instances for.
 	// TODO: use a read-only interface for the ResourceGraphDefinition
 	rgd *graph.Graph
-	// instanceLabeler is responsible for applying consistent labels
+	// definedByRGDLabeler is responsible for applying consistent labels
 	// to resources managed by this controller.
-	instanceLabeler metadata.Labeler
+	definedByRGDLabeler metadata.Labeler
+	// reconciledByRGDLabeler is responsible for applying source labels
+	// to instance managed by this controller.
+	reconciledByRGDLabeler metadata.Labeler
 	// reconcileConfig holds the configuration parameters for the reconciliation
 	// process.
 	reconcileConfig ReconcileConfig
@@ -99,14 +102,16 @@ func NewController(
 	rgd *graph.Graph,
 	clientSet kroclient.SetInterface,
 	defaultServiceAccounts map[string]string,
-	instanceLabeler metadata.Labeler,
+	definedByRGDLabeler metadata.Labeler,
+	reconciledByRGDLabeler metadata.Labeler,
 ) *Controller {
 	return &Controller{
 		log:                    log,
 		gvr:                    gvr,
 		clientSet:              clientSet,
 		rgd:                    rgd,
-		instanceLabeler:        instanceLabeler,
+		definedByRGDLabeler:    definedByRGDLabeler,
+		reconciledByRGDLabeler: reconciledByRGDLabeler,
 		reconcileConfig:        reconcileConfig,
 		defaultServiceAccounts: defaultServiceAccounts,
 	}
@@ -138,7 +143,8 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) error {
 		return fmt.Errorf("failed to create runtime resource graph definition: %w", err)
 	}
 
-	instanceSubResourcesLabeler, err := metadata.NewInstanceLabeler(instance).Merge(c.instanceLabeler)
+	managedByInstanceLabeler := metadata.NewManagedByInstanceLabeler(instance, instance.GroupVersionKind())
+	instanceSubResourcesLabeler, err := managedByInstanceLabeler.Merge(c.definedByRGDLabeler)
 	if err != nil {
 		return fmt.Errorf("failed to create instance sub-resources labeler: %w", err)
 	}
@@ -155,7 +161,7 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) error {
 		gvr:                         c.gvr,
 		client:                      executionClient,
 		runtime:                     rgRuntime,
-		instanceLabeler:             c.instanceLabeler,
+		instanceLabeler:             c.reconciledByRGDLabeler,
 		instanceSubResourcesLabeler: instanceSubResourcesLabeler,
 		reconcileConfig:             c.reconcileConfig,
 		// Fresh instance state at each reconciliation loop.
