@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rgd2-from-rgd1-configmap
+  labels:
+    kro.run/instance-name: rgd2-from-rgd1
+    kro.run/resource-graph-definition-name: check-nested-rgd2
+data:
+  key: value

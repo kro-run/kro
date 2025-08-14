@@ -1,0 +1,22 @@
+apiVersion: kro.run/v1alpha1
+kind: CheckNestedRGD2
+metadata:
+  finalizers:
+  - kro.run/finalizer
+  generation: 1
+  labels:
+    kro.run/instance-name: check-nested-test-instance
+    kro.run/owned: "true"
+    kro.run/resource-graph-definition-name: check-nested-rgd1
+    kro.run/source-resource-graph-definition-name: check-nested-rgd2
+  name: rgd2-from-rgd1
+spec:
+  name: rgd2-from-rgd1-configmap
+status:
+  conditions:
+  - message: Instance reconciled successfully
+    observedGeneration: 1
+    reason: ReconciliationSucceeded
+    status: "True"
+    type: InstanceSynced
+  state: ACTIVE
