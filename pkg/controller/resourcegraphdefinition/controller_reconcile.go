@@ -48,13 +48,14 @@ func (r *ResourceGraphDefinitionReconciler) reconcileResourceGraphDefinition(ctx
 	mark.ResourceGraphValid()
 
 	// Setup metadata labeling
-	graphExecLabeler, err := r.setupLabeler(rgd)
+	graphExecLabeler, sourceLabeler, err := r.setupLabeler(rgd)
 	if err != nil {
 		mark.FailedLabelerSetup(err.Error())
 		return nil, nil, fmt.Errorf("failed to setup labeler: %w", err)
 	}
 
 	crd := processedRGD.Instance.GetCRD()
+	// TODO(barney-s): should we apply the source labeler to the crd here instead ?
 	graphExecLabeler.ApplyLabels(&crd.ObjectMeta)
 
 	// Ensure CRD exists and is up to date
@@ -71,7 +72,7 @@ func (r *ResourceGraphDefinitionReconciler) reconcileResourceGraphDefinition(ctx
 
 	// Setup and start microcontroller
 	gvr := processedRGD.Instance.GetGroupVersionResource()
-	controller := r.setupMicroController(gvr, processedRGD, rgd.Spec.DefaultServiceAccounts, graphExecLabeler)
+	controller := r.setupMicroController(gvr, processedRGD, rgd.Spec.DefaultServiceAccounts, graphExecLabeler, sourceLabeler)
 
 	log.V(1).Info("reconciling resource graph definition micro controller")
 	// TODO: the context that is passed here is tied to the reconciliation of the rgd, we might need to make
@@ -87,9 +88,23 @@ func (r *ResourceGraphDefinitionReconciler) reconcileResourceGraphDefinition(ctx
 }
 
 // setupLabeler creates and merges the required labelers for the resource graph definition
-func (r *ResourceGraphDefinitionReconciler) setupLabeler(rgd *v1alpha1.ResourceGraphDefinition) (metadata.Labeler, error) {
+func (r *ResourceGraphDefinitionReconciler) setupLabeler(rgd *v1alpha1.ResourceGraphDefinition) (metadata.Labeler, metadata.Labeler, error) {
+	var err error
+	// Setup metadata labeling
 	rgLabeler := metadata.NewResourceGraphDefinitionLabeler(rgd)
-	return r.metadataLabeler.Merge(rgLabeler)
+	rgSourceLabeler := metadata.NewResourceGraphDefinitionSourceLabeler(rgd)
+
+	mergedLabeler, err := r.metadataLabeler.Merge(rgLabeler)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	mergedSourceLabeler, err := r.metadataLabeler.Merge(rgSourceLabeler)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return mergedLabeler, mergedSourceLabeler, nil
 }
 
 // setupMicroController creates a new controller instance with the required configuration
@@ -98,6 +113,7 @@ func (r *ResourceGraphDefinitionReconciler) setupMicroController(
 	processedRGD *graph.Graph,
 	defaultSVCs map[string]string,
 	labeler metadata.Labeler,
+	sourceLabeler metadata.Labeler,
 ) *instancectrl.Controller {
 	instanceLogger := r.instanceLogger.WithName(fmt.Sprintf("%s-controller", gvr.Resource)).WithValues(
 		"controller", gvr.Resource,
@@ -117,6 +133,7 @@ func (r *ResourceGraphDefinitionReconciler) setupMicroController(
 		r.clientSet,
 		defaultSVCs,
 		labeler,
+		sourceLabeler,
 	)
 }
 

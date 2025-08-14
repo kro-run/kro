@@ -84,6 +84,9 @@ type Controller struct {
 	// instanceLabeler is responsible for applying consistent labels
 	// to resources managed by this controller.
 	instanceLabeler metadata.Labeler
+	// sourceLabeler is responsible for applying source labels
+	// to instance managed by this controller.
+	sourceLabeler metadata.Labeler
 	// reconcileConfig holds the configuration parameters for the reconciliation
 	// process.
 	reconcileConfig ReconcileConfig
@@ -100,6 +103,7 @@ func NewController(
 	clientSet kroclient.SetInterface,
 	defaultServiceAccounts map[string]string,
 	instanceLabeler metadata.Labeler,
+	sourceLabeler metadata.Labeler,
 ) *Controller {
 	return &Controller{
 		log:                    log,
@@ -107,6 +111,7 @@ func NewController(
 		clientSet:              clientSet,
 		rgd:                    rgd,
 		instanceLabeler:        instanceLabeler,
+		sourceLabeler:          sourceLabeler,
 		reconcileConfig:        reconcileConfig,
 		defaultServiceAccounts: defaultServiceAccounts,
 	}
@@ -155,7 +160,7 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) error {
 		gvr:                         c.gvr,
 		client:                      executionClient,
 		runtime:                     rgRuntime,
-		instanceLabeler:             c.instanceLabeler,
+		instanceLabeler:             c.sourceLabeler,
 		instanceSubResourcesLabeler: instanceSubResourcesLabeler,
 		reconcileConfig:             c.reconcileConfig,
 		// Fresh instance state at each reconciliation loop.
