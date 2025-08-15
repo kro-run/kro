@@ -6,7 +6,7 @@ metadata:
   generation: 1
   labels:
     kro.run/owned: "true"
-    kro.run/source-resource-graph-definition-name: check-multi-resource-rgd
+    kro.run/resource-graph-definition-name: check-multi-resource-rgd
   name: test-app-instance
 spec:
   image: nginx:1.24
