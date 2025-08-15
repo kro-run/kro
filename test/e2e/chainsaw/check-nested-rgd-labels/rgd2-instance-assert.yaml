@@ -1,19 +1,17 @@
 apiVersion: kro.run/v1alpha1
-kind: CheckMultiResourceAutoscaledDeployment
+kind: CheckNestedRGD2
 metadata:
   finalizers:
   - kro.run/finalizer
   generation: 1
   labels:
+    kro.run/instance-name: check-nested-test-instance
     kro.run/owned: "true"
-    kro.run/source-resource-graph-definition-name: check-multi-resource-rgd
-  name: test-app-instance
+    kro.run/resource-graph-definition-name: check-nested-rgd1
+    kro.run/source-resource-graph-definition-name: check-nested-rgd2
+  name: rgd2-from-rgd1
 spec:
-  image: nginx:1.24
-  maxReplicas: 5
-  minReplicas: 1
-  name: test-app
-  targetCPUUtilization: 20
+  name: rgd2-from-rgd1-configmap
 status:
   conditions:
   - message: Instance reconciled successfully
@@ -22,4 +20,3 @@ status:
     status: "True"
     type: InstanceSynced
   state: ACTIVE
-
