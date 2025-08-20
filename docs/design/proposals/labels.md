@@ -29,43 +29,69 @@ This aligns with the common Kubernetes practice of using labels for discovery an
 We will introduce the following new labels, which will be defined in `@pkg/metadata/labels.go`:
 
 1.  **Label for an instance being reconciled:**
-    -   **Proposed Label:** `kro.run/reconciled-by`
-    -   **Value:** The name of the ResourceGraphDefinition (e.g., `my-rgd-name`).
-    -   **Purpose:** To indicate that an instance is being actively reconciled against a specific RGD. This label will be applied to the instance itself.
-    -   **Alternative Names:** `kro.run/reconciling-rgd`, `kro.run/template`.
+    - **Existing Labels:**
+      - kro.run/resource-graph-definition-id: 761e8fb7-14d5-4da1-b4f9-0a16fc334d6c
+      - kro.run/resource-graph-definition-name: check-instance-creation
+      - Conflicts with label used in creation path for nested RGD (https://github.com/kro-run/kro/pull/631)
+    - **Proposed Label:**
+      - `kro.run/reconciled-by-rgd`
+    - **Value:** The name of the ResourceGraphDefinition (e.g., `my-rgd-name`).
+    - **Purpose:** To indicate that an instance is being actively reconciled against a specific RGD. This label will be applied to the instance itself.
+    - **Alternative Names:**
+      - `kro.run/reconciling-rgd`
+      - `kro.run/template`
 
 2.  **Label for resources created during instance reconciliation:**
-    -   **Proposed Label:** `kro.run/created-by`
-    -   **Value:** The name of the ResourceGraphDefinition (e.g., `my-rgd-name`).
-    -   **Purpose:** To identify which RGD was used as a template to create a resource during the reconciliation of an instance. This label will be applied to all resources created by the instance controller.
-    -   **Alternative Names:** `kro.run/managed-by-rgd`, `kro.run/owner-rgd`, `kro.run/template-rgd`. The `managed-by` label is a common pattern in the Kubernetes ecosystem.
+    - **Existing Labels:**
+      - kro.run/resource-graph-definition-id: 761e8fb7-14d5-4da1-b4f9-0a16fc334d6c
+      - kro.run/resource-graph-definition-name: check-instance-creation
+    - **Proposed Label:**
+      - `kro.run/defined-by-rgd`
+    - **Value:** The name of the ResourceGraphDefinition (e.g., `my-rgd-name`).
+    - **Purpose:** To identify which RGD was used as a template to create a resource during the reconciliation of an instance. This label will be applied to all resources created by the instance controller.
+    - **Alternative Names:**
+      - kro.run/created-by-rgd
+      - kro.run/managed-by-rgd
+      - kro.run/owner-rgd
+      - kro.run/template-rgd
 
 3.  **Labels for resources to link back to the instance:**
-    -   **Proposed Labels:** 
-        - `kro.run/managed-by-instance-group`: The API group of the instance (e.g., `mygroup.example.com`).
-        - `kro.run/managed-by-instance-kind`: The kind of the instance (e.g., `MyKind`).
-        - `kro.run/managed-by-instance-namespace`: The namespace of the instance (e.g., `default`).
-        - `kro.run/managed-by-instance-name`: The name of the instance (e.g., `my-instance`).
-        - The `managed-by` label is a common pattern in the Kubernetes ecosystem.
-    -   **Purpose:** To provide a direct and queryable link from a created resource back to the instance that caused its creation. This set of labels uniquely identifies the instance.
-    -   **Alternative Name prefix:** `kro.run/owner-`, `kro.run/created-by-`, etc.
+    - **Existing Label:**
+      - kro.run/instance-id: 6e6a1d95-4855-4062-b51b-8f288cb96365
+      - kro.run/instance-name: test-instance
+      - kro.run/instance-namespace: default
+    - **Proposed Labels:**
+      - `kro.run/managed-by-instance-group`: The API group of the instance (e.g., `mygroup.example.com`).
+      - `kro.run/managed-by-instance-kind`: The kind of the instance (e.g., `MyKind`).
+      - `kro.run/managed-by-instance-namespace`: The namespace of the instance (e.g., `default`).
+      - `kro.run/managed-by-instance-name`: The name of the instance (e.g., `my-instance`).
+      - The `managed-by` label is a common pattern in the Kubernetes ecosystem.
+    - **Purpose:** To provide a direct and queryable link from a created resource back to the instance that caused its creation. This set of labels uniquely identifies the instance.
+    - **Alternative Name prefix:**
+      - `kro.run/owner-`
+      - `kro.run/created-by-`
 
 ## Other solutions considered
 
-We could continue using the existing labels, but their purpose is not as explicit for relationship tracking, which can lead to confusion for users and client tools. We could also use annotations, but labels are better suited for this purpose as they are queryable via the Kubernetes API, which is a key requirement for observability and tooling.
+1. We could continue using the existing labels, but their purpose is not as explicit for relationship tracking, which can lead to confusion for users and client tools.
+2. We could also use annotations, but labels are better suited for this purpose as they are queryable via the Kubernetes API, which is a key requirement for observability and tooling.
 
 ## Scoping
 
 #### What is in scope for this proposal?
 
--   Defining and adding the new labels to the KRO API.
--   Updating the instance controller to apply these labels to instances and created resources during reconciliation.
--   Updating the official KRO documentation to reflect the new labels and their usage.
+-  Defining and adding the new labels to the KRO API.
+-  Updating the instance controller to apply these labels to instances and created resources during reconciliation.
+-  Updating the official KRO documentation to reflect the new labels and their usage.
+-  Adding docs reflecting the new labels. Old labels would not be documented.
+-  Deprecate old labels in next minor release or the one after that.
 
 #### What is not in scope?
 
--   Removing or deprecating the existing labels. This could be considered in a future proposal to maintain backward compatibility.
--   Changing how KRO uses annotations.
+- Changing how KRO uses annotations.
+- Changing these existing labels:
+  - kro.run/kro-version: v0.4.0
+  - kro.run/owned: "true"
 
 ## Testing strategy
 
