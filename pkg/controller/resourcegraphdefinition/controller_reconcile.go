@@ -20,7 +20,10 @@ import (
 	"time"
 
 	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/tools/cache"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/kro-run/kro/api/v1alpha1"
@@ -69,21 +72,84 @@ func (r *ResourceGraphDefinitionReconciler) reconcileResourceGraphDefinition(ctx
 		mark.KindReady(crd.Status.AcceptedNames.Kind)
 	}
 
+	// Retrieve resource handlers for the resources in the graph
+	// This will be used by the dynamic controller to handle events for these resources
+	// after the microcontroller has started dynamic watches.
+	var resourceHandlers map[schema.GroupVersionResource]cache.ResourceEventHandlerFuncs
+	if metadata.GetInstanceWatchResources(rgd.ObjectMeta) {
+		resourceHandlers = r.getResourceGraphResourceHandlers(ctx, processedRGD)
+	}
+
 	// Setup and start microcontroller
-	gvr := processedRGD.Instance.GetGroupVersionResource()
-	controller := r.setupMicroController(gvr, processedRGD, rgd.Spec.DefaultServiceAccounts, graphExecLabeler)
+	controller := r.setupMicroController(processedRGD, rgd.Spec.DefaultServiceAccounts, graphExecLabeler)
 
 	log.V(1).Info("reconciling resource graph definition micro controller")
+	gvr := processedRGD.Instance.GetGroupVersionResource()
 	// TODO: the context that is passed here is tied to the reconciliation of the rgd, we might need to make
 	// a new context with our own cancel function here to allow us to cleanly term the dynamic controller
 	// rather than have it ignore this context and use the background context.
-	if err := r.reconcileResourceGraphDefinitionMicroController(ctx, &gvr, controller.Reconcile); err != nil {
+	if err := r.reconcileResourceGraphDefinitionMicroController(ctx, &gvr, controller.Reconcile, resourceHandlers); err != nil {
 		mark.ControllerFailedToStart(err.Error())
 		return processedRGD.TopologicalOrder, resourcesInfo, err
 	}
 	mark.ControllerRunning()
 
 	return processedRGD.TopologicalOrder, resourcesInfo, nil
+}
+
+func (r *ResourceGraphDefinitionReconciler) getResourceGraphResourceHandlers(ctx context.Context, processedRGD *graph.Graph) map[schema.GroupVersionResource]cache.ResourceEventHandlerFuncs {
+	update := func(obj interface{}, eventType string) {
+		gvr := processedRGD.Instance.GetGroupVersionResource()
+		obju, ok := obj.(*unstructured.Unstructured)
+		if !ok {
+			return
+		}
+
+		// if there is no kro instance label set, we assume the object is irrelevant for the instance.
+		labels := obju.GetLabels()
+		owned, ok := labels[metadata.OwnedLabel]
+		if !ok || owned != "true" {
+			return
+		}
+		name, ok := labels[metadata.InstanceLabel]
+		if !ok {
+			return
+		}
+		namespace, ok := labels[metadata.InstanceNamespaceLabel]
+		if !ok {
+			return
+		}
+
+		instance, err := r.clientSet.Dynamic().Resource(gvr).
+			Namespace(namespace).
+			Get(ctx, name, metav1.GetOptions{})
+		if err == nil {
+			r.instanceLogger.Info("update from resource",
+				"name", name,
+				"namespace", namespace,
+				"gvr", gvr,
+				"resourceName", obju.GetName(),
+				"resourceNamespace", obju.GetNamespace(),
+				"eventType", eventType)
+			r.dynamicController.EnqueueObject(instance, eventType)
+		}
+	}
+
+	resourceHandlers := make(map[schema.GroupVersionResource]cache.ResourceEventHandlerFuncs, len(processedRGD.Resources))
+	for _, resource := range processedRGD.Resources {
+		resourceHandlers[resource.GetGroupVersionResource()] = cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				update(obj, "add")
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				update(newObj, "update")
+			},
+			DeleteFunc: func(obj interface{}) {
+				update(obj, "delete")
+			},
+		}
+	}
+	return resourceHandlers
 }
 
 // setupLabeler creates and merges the required labelers for the resource graph definition
@@ -94,11 +160,11 @@ func (r *ResourceGraphDefinitionReconciler) setupLabeler(rgd *v1alpha1.ResourceG
 
 // setupMicroController creates a new controller instance with the required configuration
 func (r *ResourceGraphDefinitionReconciler) setupMicroController(
-	gvr schema.GroupVersionResource,
 	processedRGD *graph.Graph,
 	defaultSVCs map[string]string,
 	labeler metadata.Labeler,
 ) *instancectrl.Controller {
+	gvr := processedRGD.Instance.GetGroupVersionResource()
 	instanceLogger := r.instanceLogger.WithName(fmt.Sprintf("%s-controller", gvr.Resource)).WithValues(
 		"controller", gvr.Resource,
 		"controllerGroup", processedRGD.Instance.GetCRD().Spec.Group,
@@ -160,8 +226,13 @@ func (r *ResourceGraphDefinitionReconciler) reconcileResourceGraphDefinitionCRD(
 }
 
 // reconcileResourceGraphDefinitionMicroController starts the microcontroller for handling the resources
-func (r *ResourceGraphDefinitionReconciler) reconcileResourceGraphDefinitionMicroController(ctx context.Context, gvr *schema.GroupVersionResource, handler dynamiccontroller.Handler) error {
-	err := r.dynamicController.StartServingGVK(ctx, *gvr, handler)
+func (r *ResourceGraphDefinitionReconciler) reconcileResourceGraphDefinitionMicroController(
+	ctx context.Context,
+	gvr *schema.GroupVersionResource,
+	handler dynamiccontroller.Handler,
+	resourceHandlers map[schema.GroupVersionResource]cache.ResourceEventHandlerFuncs,
+) error {
+	err := r.dynamicController.StartServingGVK(ctx, *gvr, handler, resourceHandlers)
 	if err != nil {
 		return newMicroControllerError(err)
 	}
