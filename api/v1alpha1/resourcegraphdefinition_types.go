@@ -19,10 +19,14 @@ import (
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
+type AdditionalPrinterColumnPolicy string
+
 const (
 	// DefaultServiceAccountKey is the key to use for the default service account
 	// in the serviceAccounts map.
 	DefaultServiceAccountKey = "*"
+	AdditionalPrinterColumnPolicyReplace AdditionalPrinterColumnPolicy = "Replace"
+	AdditionalPrinterColumnPolicyAdd     AdditionalPrinterColumnPolicy = "Add"
 )
 
 // ResourceGraphDefinitionSpec defines the desired state of ResourceGraphDefinition
@@ -86,11 +90,24 @@ type Schema struct {
 	// Validation is a list of validation rules that are applied to the
 	// resourcegraphdefinition.
 	Validation []Validation `json:"validation,omitempty"`
-	// AdditionalPrinterColumns defines additional printer columns
-	// that will be passed down to the created CRD. If set, no
-	// default printer columns will be added to the created CRD,
-	// and if default printer columns need to be retained, they
-	// need to be added explicitly.
+	// AdditionalPrinterColumnPolicy defines additional printer columns
+	// that will be passed down to the created CRD. The Default tag is "Replace", that only uses the provided columns, "Add:" tag Merge provided columns with defaults.
+	//
+	// AdditionalPrinterColumnPolicy controls how provided additional printer
+	// columns are applied to the generated CRD.
+	//
+	// - "Replace": only use the provided columns; if none are provided, fall
+	//   back to the operator defaults (backwards compatible default).
+	// - "Add": merge the provided columns with the defaults, with user
+	//   definitions overriding defaults when they share a identifying key
+	//   (Name preferred, fallback to JSONPath).
+	//
+	// +kubebuilder:validation:Enum=Replace;Add
+	// +kubebuilder:default=Replace
+	AdditionalPrinterColumnPolicy AdditionalPrinterColumnPolicy `json:"additionalPrinterColumnPolicy,omitempty"`
+
+	// AdditionalPrinterColumns is the list of user-specified printer columns
+	// to apply according to AdditionalPrinterColumnPolicy.
 	//
 	// +kubebuilder:validation:Optional
 	AdditionalPrinterColumns []extv1.CustomResourceColumnDefinition `json:"additionalPrinterColumns,omitempty"`

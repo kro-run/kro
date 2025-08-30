@@ -73,7 +73,7 @@ func TestSynthesizeCRD(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			crd := SynthesizeCRD(tt.group, tt.apiVersion, tt.kind, tt.spec, tt.status, tt.statusFieldsOverride, nil)
+			crd := SynthesizeCRD(tt.group, tt.apiVersion, tt.kind, tt.spec, tt.status, tt.statusFieldsOverride, v1alpha1.AdditionalPrinterColumnPolicyReplace, nil)
 
 			assert.Equal(t, tt.expectedName, crd.Name)
 			assert.Equal(t, tt.expectedGroup, crd.Spec.Group)

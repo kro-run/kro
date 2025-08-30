@@ -27,12 +27,13 @@ import (
 
 // SynthesizeCRD generates a CustomResourceDefinition for a given API version and kind
 // with the provided spec and status schemas~
-func SynthesizeCRD(group, apiVersion, kind string, spec, status extv1.JSONSchemaProps, statusFieldsOverride bool, additionalPrinterColumns []extv1.CustomResourceColumnDefinition) *extv1.CustomResourceDefinition {
+func SynthesizeCRD(group, apiVersion, kind string, spec, status extv1.JSONSchemaProps, statusFieldsOverride bool, policy v1alpha1.AdditionalPrinterColumnPolicy, additionalPrinterColumns []extv1.CustomResourceColumnDefinition) *extv1.CustomResourceDefinition {
 	crdGroup := group
 	if crdGroup == "" {
 		crdGroup = v1alpha1.KRODomainName
 	}
-	return newCRD(crdGroup, apiVersion, kind, newCRDSchema(spec, status, statusFieldsOverride), additionalPrinterColumns)
+	merged := newCRDAdditionalPrinterColumns(policy, additionalPrinterColumns)
+	return newCRD(crdGroup, apiVersion, kind, newCRDSchema(spec, status, statusFieldsOverride), merged)
 }
 
 func newCRD(group, apiVersion, kind string, schema *extv1.JSONSchemaProps, additionalPrinterColumns []extv1.CustomResourceColumnDefinition) *extv1.CustomResourceDefinition {
@@ -62,7 +63,7 @@ func newCRD(group, apiVersion, kind string, schema *extv1.JSONSchemaProps, addit
 					Subresources: &extv1.CustomResourceSubresources{
 						Status: &extv1.CustomResourceSubresourceStatus{},
 					},
-					AdditionalPrinterColumns: newCRDAdditionalPrinterColumns(additionalPrinterColumns),
+					AdditionalPrinterColumns: newCRDAdditionalPrinterColumns(v1alpha1.AdditionalPrinterColumnPolicyReplace, additionalPrinterColumns),
 				},
 			},
 		},
@@ -103,10 +104,42 @@ func newCRDSchema(spec, status extv1.JSONSchemaProps, statusFieldsOverride bool)
 	}
 }
 
-func newCRDAdditionalPrinterColumns(additionalPrinterColumns []extv1.CustomResourceColumnDefinition) []extv1.CustomResourceColumnDefinition {
-	if len(additionalPrinterColumns) == 0 {
-		return defaultAdditionalPrinterColumns
+func newCRDAdditionalPrinterColumns(policy v1alpha1.AdditionalPrinterColumnPolicy, userCols []extv1.CustomResourceColumnDefinition) []extv1.CustomResourceColumnDefinition {
+	// Default behavior: Replace
+	if policy == "" || policy == v1alpha1.AdditionalPrinterColumnPolicyReplace {
+		if len(userCols) == 0 {
+			return defaultAdditionalPrinterColumns
+		}
+		return userCols
 	}
 
-	return additionalPrinterColumns
+	// Add behavior: merge defaults with user-provided columns.
+	keyOf := func(c extv1.CustomResourceColumnDefinition) string {
+		if c.Name != "" {
+			return "name:" + c.Name
+		}
+		if c.JSONPath != "" {
+			return "path:" + c.JSONPath
+		}
+		// fallback to a stable placeholder the pointer value
+		return fmt.Sprintf("idx:%p", &c)
+	}
+
+	merged := make([]extv1.CustomResourceColumnDefinition, 0, len(defaultAdditionalPrinterColumns))
+	index := map[string]int{}
+	for i, d := range defaultAdditionalPrinterColumns {
+		merged = append(merged, d)
+		index[keyOf(d)] = i
+	}
+
+	for _, u := range userCols {
+		k := keyOf(u)
+		if pos, ok := index[k]; ok {
+			merged[pos] = u
+		} else {
+			index[k] = len(merged)
+			merged = append(merged, u)
+		}
+	}
+	return merged
 }
