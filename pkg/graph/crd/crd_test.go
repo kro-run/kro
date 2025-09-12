@@ -73,7 +73,7 @@ func TestSynthesizeCRD(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			crd := SynthesizeCRD(tt.group, tt.apiVersion, tt.kind, tt.spec, tt.status, tt.statusFieldsOverride, nil)
+			crd := SynthesizeCRD(tt.group, tt.apiVersion, tt.kind, tt.spec, tt.status, tt.statusFieldsOverride, v1alpha1.AdditionalPrinterColumnPolicyReplace, nil)
 
 			assert.Equal(t, tt.expectedName, crd.Name)
 			assert.Equal(t, tt.expectedGroup, crd.Spec.Group)
@@ -103,7 +103,7 @@ func TestNewCRD(t *testing.T) {
 		group                  string
 		apiVersion             string
 		kind                   string
-		printerColumns         []extv1.CustomResourceColumnDefinition
+		additionalPrinterColumns         []extv1.CustomResourceColumnDefinition
 		expectedName           string
 		expectedKind           string
 		expectedPlural         string
@@ -148,7 +148,7 @@ func TestNewCRD(t *testing.T) {
 			group:                  "kro.com",
 			apiVersion:             "v2beta1",
 			kind:                   "WebHook",
-			printerColumns:         []extv1.CustomResourceColumnDefinition{},
+			additionalPrinterColumns:         []extv1.CustomResourceColumnDefinition{},
 			expectedName:           "webhooks.kro.com",
 			expectedKind:           "WebHook",
 			expectedPlural:         "webhooks",
@@ -160,7 +160,7 @@ func TestNewCRD(t *testing.T) {
 			group:      "kro.com",
 			apiVersion: "v2beta1",
 			kind:       "WebHook",
-			printerColumns: []extv1.CustomResourceColumnDefinition{
+			additionalPrinterColumns: []extv1.CustomResourceColumnDefinition{
 				{
 					Name:     "Available replicas",
 					Type:     "integer",
@@ -194,7 +194,7 @@ func TestNewCRD(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			schema := &extv1.JSONSchemaProps{Type: "object"}
-			crd := newCRD(tt.group, tt.apiVersion, tt.kind, schema, tt.printerColumns)
+			crd := newCRD(tt.group, tt.apiVersion, tt.kind, schema, tt.additionalPrinterColumns)
 
 			assert.Equal(t, tt.expectedName, crd.Name)
 			assert.Equal(t, tt.group, crd.Spec.Group)
@@ -288,4 +288,233 @@ func TestNewCRDSchema(t *testing.T) {
 
 		})
 	}
+}
+
+func TestNewCRDAdditionalPrinterColumns(t *testing.T) {
+	tests := []struct {
+		name     string
+		policy   v1alpha1.AdditionalPrinterColumnPolicy
+		userCols []extv1.CustomResourceColumnDefinition
+		want     []extv1.CustomResourceColumnDefinition
+	}{
+		// Replace Policy Tests:
+		{
+			name:     "Replace policy with empty user columns returns defaults",
+			policy:   v1alpha1.AdditionalPrinterColumnPolicyReplace,
+			userCols: []extv1.CustomResourceColumnDefinition{},
+			want:     defaultAdditionalPrinterColumns,
+		},
+		{
+			name:   "Replace policy with user columns returns only user columns",
+			policy: v1alpha1.AdditionalPrinterColumnPolicyReplace,
+			userCols: []extv1.CustomResourceColumnDefinition{
+				{Name: "Custom", JSONPath: ".spec.custom", Type: "string"},
+			},
+			want: []extv1.CustomResourceColumnDefinition{
+				{Name: "Custom", JSONPath: ".spec.custom", Type: "string"},
+			},
+		},
+		{
+			name:     "Empty policy defaults to Replace behavior",
+			policy:   "",
+			userCols: []extv1.CustomResourceColumnDefinition{},
+			want:     defaultAdditionalPrinterColumns,
+		},
+		// Add Policy Tests:
+		{
+			name:     "Add policy with empty user columns returns defaults",
+			policy:   v1alpha1.AdditionalPrinterColumnPolicyAdd,
+			userCols: []extv1.CustomResourceColumnDefinition{},
+			want:     defaultAdditionalPrinterColumns,
+		},
+		{
+			name:   "Add policy overrides default by name",
+			policy: v1alpha1.AdditionalPrinterColumnPolicyAdd,
+			userCols: []extv1.CustomResourceColumnDefinition{
+				{Name: "State", JSONPath: ".status.customState", Type: "string"}, // override default State
+			},
+			want: func() []extv1.CustomResourceColumnDefinition {
+				// Create expected result with State overridden
+				result := make([]extv1.CustomResourceColumnDefinition, len(defaultAdditionalPrinterColumns))
+				copy(result, defaultAdditionalPrinterColumns)
+				// Find and override State column
+				for i, col := range result {
+					if col.Name == "State" {
+						result[i] = extv1.CustomResourceColumnDefinition{Name: "State", JSONPath: ".status.customState", Type: "string"}
+						break
+					}
+				}
+				return result
+			}(),
+		},
+		{
+			name:   "Add policy appends new user column",
+			policy: v1alpha1.AdditionalPrinterColumnPolicyAdd,
+			userCols: []extv1.CustomResourceColumnDefinition{
+				{Name: "CUSTOM", JSONPath: ".spec.custom", Type: "string"},
+			},
+			want: append(defaultAdditionalPrinterColumns,
+				extv1.CustomResourceColumnDefinition{Name: "CUSTOM", JSONPath: ".spec.custom", Type: "string"}),
+		},
+		{
+			name:   "Add policy with mixed override and append",
+			policy: v1alpha1.AdditionalPrinterColumnPolicyAdd,
+			userCols: []extv1.CustomResourceColumnDefinition{
+				{Name: "State", JSONPath: ".status.customState", Type: "string"}, // override
+				{Name: "CUSTOM", JSONPath: ".spec.custom", Type: "string"},       // append
+			},
+			want: func() []extv1.CustomResourceColumnDefinition {
+				result := make([]extv1.CustomResourceColumnDefinition, len(defaultAdditionalPrinterColumns))
+				copy(result, defaultAdditionalPrinterColumns)
+				// Find and override State column
+				for i, col := range result {
+					if col.Name == "State" {
+						result[i] = extv1.CustomResourceColumnDefinition{Name: "State", JSONPath: ".status.customState", Type: "string"}
+						break
+					}
+				}
+				// Append custom column
+				result = append(result, extv1.CustomResourceColumnDefinition{Name: "CUSTOM", JSONPath: ".spec.custom", Type: "string"})
+				return result
+			}(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := newCRDAdditionalPrinterColumns(tt.policy, tt.userCols)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestSynthesizeCRDWithPolicy(t *testing.T) {
+	spec := extv1.JSONSchemaProps{
+		Type: "object",
+		Properties: map[string]extv1.JSONSchemaProps{
+			"field": {Type: "string"},
+		},
+	}
+	status := extv1.JSONSchemaProps{
+		Type: "object",
+		Properties: map[string]extv1.JSONSchemaProps{
+			"state": {Type: "string"},
+		},
+	}
+
+	tests := []struct {
+		name                        string
+		policy                      v1alpha1.AdditionalPrinterColumnPolicy
+		additionalPrinterColumns    []extv1.CustomResourceColumnDefinition
+		expectedColumnCount         int
+		expectedCustomColumnExists bool
+	}{
+		{
+			name:	"Replace policy with custom columns",
+			policy: v1alpha1.AdditionalPrinterColumnPolicyReplace,
+			additionalPrinterColumns: []extv1.CustomResourceColumnDefinition{
+				{Name: "Custom", JSONPath: ".spec.field", Type: "string"},
+			},
+			expectedColumnCount:         1,
+			expectedCustomColumnExists: true,
+		},
+		{
+			name:	"Replace policy with empty columns uses defaults",
+			policy:                      v1alpha1.AdditionalPrinterColumnPolicyReplace,
+			additionalPrinterColumns:    []extv1.CustomResourceColumnDefinition{},
+			expectedColumnCount:         len(defaultAdditionalPrinterColumns),
+			expectedCustomColumnExists: false,
+		},
+		{
+			name:   "Add policy merges with defaults",
+			policy: v1alpha1.AdditionalPrinterColumnPolicyAdd,
+			additionalPrinterColumns: []extv1.CustomResourceColumnDefinition{
+				{Name: "Custom", JSONPath: ".spec.field", Type: "string"},
+			},
+			expectedColumnCount:         len(defaultAdditionalPrinterColumns) + 1,
+			expectedCustomColumnExists: true,
+		},
+		{
+			name:   "Empty policy defaults to Replace",
+			policy: "",
+			additionalPrinterColumns: []extv1.CustomResourceColumnDefinition{
+				{Name: "Custom", JSONPath: ".spec.field", Type: "string"},
+			},
+			expectedColumnCount:         1,
+			expectedCustomColumnExists: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			crd := SynthesizeCRD("kro.com", "v1", "TestKind", spec, status, false, tt.policy, tt.additionalPrinterColumns)
+
+			require.NotNil(t, crd)
+			assert.Equal(t, "testkinds.kro.com", crd.Name)
+
+			// Check printer columns
+			version := crd.Spec.Versions[0]
+			assert.Len(t, version.AdditionalPrinterColumns, tt.expectedColumnCount)
+
+			if tt.expectedCustomColumnExists {
+				found := false
+				for _, col := range version.AdditionalPrinterColumns {
+					if col.Name == "Custom" {
+						found = true
+						assert.Equal(t, ".spec.field", col.JSONPath)
+						break
+					}
+				}
+				assert.True(t, found, "Custom column should be present")
+			}
+		})
+	}
+}
+
+func TestAdditionalPrinterColumnPolicyBackwardsCompatibility(t *testing.T) {
+	spec := extv1.JSONSchemaProps{Type: "object"}
+	status := extv1.JSONSchemaProps{Type: "object"}
+
+	// Test that omitting policy behaves like Replace
+	crd1 := SynthesizeCRD("kro.com", "v1", "TestKind", spec, status, false, "", nil)
+	crd2 := SynthesizeCRD("kro.com", "v1", "TestKind", spec, status, false, v1alpha1.AdditionalPrinterColumnPolicyReplace, nil)
+
+	version1 := crd1.Spec.Versions[0]
+	version2 := crd2.Spec.Versions[0]
+
+	assert.Equal(t, version1.AdditionalPrinterColumns, version2.AdditionalPrinterColumns, "Empty policy should behave like Replace")
+	assert.Equal(t, defaultAdditionalPrinterColumns, version1.AdditionalPrinterColumns, "Should use default columns when policy is empty and no user columns provided")
+}
+
+func TestAdditionalPrinterColumnPolicyMergeOrder(t *testing.T) {
+	userCols := []extv1.CustomResourceColumnDefinition{
+		{Name: "First", JSONPath: ".spec.first", Type: "string"},
+		{Name: "State", JSONPath: ".status.overriddenState", Type: "string"}, // Override default
+		{Name: "Second", JSONPath: ".spec.second", Type: "integer"},
+	}
+
+	result := newCRDAdditionalPrinterColumns(v1alpha1.AdditionalPrinterColumnPolicyAdd, userCols)
+
+	// Check that State was overridden in place
+	stateFound := false
+	for _, col := range result {
+		if col.Name == "State" {
+			stateFound = true
+			assert.Equal(t, ".status.overriddenState", col.JSONPath, "State column should be overridden")
+			break
+		}
+	}
+	assert.True(t, stateFound, "State column should be present")
+
+	// Check that new columns are appended at the end
+	lastCols := result[len(defaultAdditionalPrinterColumns):]
+	expectedNewCols := []extv1.CustomResourceColumnDefinition{
+		{Name: "First", JSONPath: ".spec.first", Type: "string"},
+		{Name: "Second", JSONPath: ".spec.second", Type: "integer"},
+	}
+	assert.Equal(t, expectedNewCols, lastCols, "New columns should be appended in order")
+
+	// Verify total length
+	expectedLength := len(defaultAdditionalPrinterColumns) + 2 // 2 new columns (State was overridden, not added)
+	assert.Len(t, result, expectedLength)
 }
