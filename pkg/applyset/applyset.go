@@ -97,7 +97,7 @@ Example Usage:
 	}
 */
 type Set interface {
-	Add(ctx context.Context, obj ApplyableObject) error
+	Add(ctx context.Context, obj ApplyableObject) (*unstructured.Unstructured, error)
 	Apply(ctx context.Context, prune bool) (*ApplyResult, error)
 	DryRun(ctx context.Context, prune bool) (*ApplyResult, error)
 }
@@ -116,21 +116,6 @@ type Config struct {
 
 	// Log is used to inject the calling reconciler's logger
 	Log logr.Logger
-
-	// Callbacks
-
-	// LoadCallback is called after an object is read from the cluster.
-	// This is done as part of Add() interface call.
-	LoadCallback func(obj ApplyableObject, clusterValue *unstructured.Unstructured) error
-
-	// AfterApplyCallback is called after an object has been applied to the cluster.
-	// This callback is passed the return value of the apply call.
-	AfterApplyCallback func(obj AppliedObject) error
-
-	// BeforePruneCallback is called before an object is pruned from the cluster.
-	// This callback is passed the object being pruned.
-	// This would not be part of the current applyset by definition.
-	BeforePruneCallback func(obj PrunedObject) error
 }
 
 /*
@@ -203,11 +188,6 @@ func New(
 			},
 			//deleteOptions: metav1.DeleteOptions{},
 		},
-		callbacks: callbacks{
-			loadFn:        config.LoadCallback,
-			afterApplyFn:  config.AfterApplyCallback,
-			beforePruneFn: config.BeforePruneCallback,
-		},
 		log: config.Log,
 	}
 
@@ -224,12 +204,6 @@ func New(
 	}
 
 	return aset, nil
-}
-
-type callbacks struct {
-	loadFn        func(obj ApplyableObject, observed *unstructured.Unstructured) error
-	afterApplyFn  func(obj AppliedObject) error
-	beforePruneFn func(obj PrunedObject) error
 }
 
 type serverOptions struct {
@@ -283,7 +257,6 @@ type applySet struct {
 	desired *tracker
 	clientSet
 	serverOptions
-	callbacks
 
 	log logr.Logger
 }
@@ -352,19 +325,19 @@ func (a *applySet) resourceClient(obj Applyable) (dynamic.ResourceInterface, err
 	return dynResource, nil
 }
 
-func (a *applySet) Add(ctx context.Context, obj ApplyableObject) error {
+func (a *applySet) Add(ctx context.Context, obj ApplyableObject) (*unstructured.Unstructured, error) {
 	restMapping, err := a.getRestMapping(obj)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := a.getAndRecordNamespace(obj, restMapping); err != nil {
-		return err
+		return nil, err
 	}
 	obj.SetLabels(a.InjectApplysetLabels(a.injectToolLabels(obj.GetLabels())))
 
 	dynResource, err := a.resourceClient(obj)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	observed, err := dynResource.Get(ctx,
 		obj.GetName(),
@@ -374,7 +347,7 @@ func (a *applySet) Add(ctx context.Context, obj ApplyableObject) error {
 		if apierrors.IsNotFound(err) {
 			observed = nil
 		} else {
-			return fmt.Errorf("error getting object from cluster: %w", err)
+			return nil, fmt.Errorf("error getting object from cluster: %w", err)
 		}
 	}
 	if observed != nil {
@@ -384,15 +357,9 @@ func (a *applySet) Add(ctx context.Context, obj ApplyableObject) error {
 	a.log.V(2).Info("adding object to applyset", "object", obj.String(), "cluster-revision", obj.lastReadRevision)
 
 	if err := a.desired.Add(obj); err != nil {
-		return err
+		return nil, err
 	}
-	// If a load callback is provided, we will load the object from the cluster.
-	if a.loadFn != nil {
-		if err := a.loadFn(obj, observed); err != nil {
-			return err
-		}
-	}
-	return nil
+	return observed, nil
 }
 
 // ID is the label value that we are using to identify this applyset.
@@ -584,15 +551,9 @@ func (a *applySet) apply(ctx context.Context, dryRun bool) (*ApplyResult, error)
 			return results, err
 		}
 		lastApplied, err := dynResource.Apply(ctx, obj.GetName(), obj.Unstructured, options)
-		ao := results.recordApplied(obj, lastApplied, err)
+		results.recordApplied(obj, lastApplied, err)
 		a.log.V(2).Info("applied object", "object", obj.String(), "applied-revision", lastApplied.GetResourceVersion(),
 			"error", err)
-
-		if a.afterApplyFn != nil {
-			if err := a.afterApplyFn(ao); err != nil {
-				return results, fmt.Errorf("error after apply: %w", err)
-			}
-		}
 	}
 
 	return results, nil
@@ -612,13 +573,6 @@ func (a *applySet) prune(ctx context.Context, results *ApplyResult, dryRun bool)
 		namespace := pruneObjects[i].GetNamespace()
 		mapping := pruneObjects[i].Mapping
 
-		if a.beforePruneFn != nil {
-			if err := a.beforePruneFn(PrunedObject{
-				PruneObject: pruneObjects[i],
-			}); err != nil {
-				return results, fmt.Errorf("error from before-prune callback: %w", err)
-			}
-		}
 		var err error
 		if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
 			err = a.dynamicClient.Resource(mapping.Resource).Namespace(namespace).Delete(ctx, name, options)

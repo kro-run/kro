@@ -166,7 +166,7 @@ func TestApplySet_Add(t *testing.T) {
 
 	aset, _ := newTestApplySet(t, parent)
 
-	err := aset.Add(context.Background(), configMap("test-cm", "default"))
+	_, err := aset.Add(context.Background(), configMap("test-cm", "default"))
 	assert.NoError(t, err)
 
 	as := aset.(*applySet)
@@ -197,7 +197,7 @@ func TestApplySet_Apply(t *testing.T) {
 	parent := parentObj(secretGVK, "parent-secret")
 
 	aset, dynamicClient := newTestApplySet(t, parent)
-	err := aset.Add(context.Background(), configMap("test-cm", "default"))
+	_, err := aset.Add(context.Background(), configMap("test-cm", "default"))
 	assert.NoError(t, err)
 
 	dynamicClient.PrependReactor("patch", "configmaps", func(action k8stesting.Action) (handled bool, ret runtime.Object, err error) {
@@ -253,7 +253,7 @@ func TestApplySet_Prune(t *testing.T) {
 	as := aset.(*applySet)
 	assert.Equal(t, "applyset-wHf5Gity0G0nPN34KuNBIBBEOu2H9ED2KqsblMPFygM-v1", as.ID())
 
-	err := aset.Add(context.Background(), configMap("test-cm", "default"))
+	_, err := aset.Add(context.Background(), configMap("test-cm", "default"))
 	assert.NoError(t, err)
 
 	dynamicClient.PrependReactor("patch", "configmaps", func(action k8stesting.Action) (handled bool, ret runtime.Object, err error) {
@@ -308,11 +308,11 @@ func TestApplySet_ApplyMultiNamespace(t *testing.T) {
 	parent := parentObj(secretGVK, "parent-secret")
 
 	aset, dynamicClient := newTestApplySet(t, parent)
-	err := aset.Add(context.Background(), configMap("test-cm", "ns1"))
+	_, err := aset.Add(context.Background(), configMap("test-cm", "ns1"))
 	assert.NoError(t, err)
-	err = aset.Add(context.Background(), configMap("test-cm", "ns2"))
+	_, err = aset.Add(context.Background(), configMap("test-cm", "ns2"))
 	assert.NoError(t, err)
-	err = aset.Add(context.Background(), foo("test-foo", "ns3"))
+	_, err = aset.Add(context.Background(), foo("test-foo", "ns3"))
 	assert.NoError(t, err)
 
 	dynamicClient.PrependReactor("patch", "configmaps", func(action k8stesting.Action) (handled bool, ret runtime.Object, err error) {
@@ -384,11 +384,11 @@ func TestApplySet_PruneMultiNamespace(t *testing.T) {
 	as := aset.(*applySet)
 	assert.Equal(t, "applyset-wHf5Gity0G0nPN34KuNBIBBEOu2H9ED2KqsblMPFygM-v1", as.ID())
 
-	err := aset.Add(context.Background(), configMap("test-cm", "ns1"))
+	_, err := aset.Add(context.Background(), configMap("test-cm", "ns1"))
 	assert.NoError(t, err)
-	err = aset.Add(context.Background(), configMap("test-cm", "ns2"))
+	_, err = aset.Add(context.Background(), configMap("test-cm", "ns2"))
 	assert.NoError(t, err)
-	err = aset.Add(context.Background(), foo("test-foo", "ns3"))
+	_, err = aset.Add(context.Background(), foo("test-foo", "ns3"))
 	assert.NoError(t, err)
 
 	dynamicClient.PrependReactor("patch", "configmaps", func(action k8stesting.Action) (handled bool, ret runtime.Object, err error) {
@@ -472,11 +472,11 @@ func TestApplySet_PruneOldNamespace(t *testing.T) {
 	as := aset.(*applySet)
 	assert.Equal(t, "applyset-wHf5Gity0G0nPN34KuNBIBBEOu2H9ED2KqsblMPFygM-v1", as.ID())
 
-	err := aset.Add(context.Background(), configMap("test-cm", "ns1"))
+	_, err := aset.Add(context.Background(), configMap("test-cm", "ns1"))
 	assert.NoError(t, err)
-	err = aset.Add(context.Background(), configMap("test-cm", "ns2"))
+	_, err = aset.Add(context.Background(), configMap("test-cm", "ns2"))
 	assert.NoError(t, err)
-	err = aset.Add(context.Background(), foo("test-foo", "ns3"))
+	_, err = aset.Add(context.Background(), foo("test-foo", "ns3"))
 	assert.NoError(t, err)
 
 	dynamicClient.PrependReactor("patch", "configmaps", func(action k8stesting.Action) (handled bool, ret runtime.Object, err error) {
@@ -556,9 +556,9 @@ func TestApplySet_PruneOldGVKs(t *testing.T) {
 	as := aset.(*applySet)
 	assert.Equal(t, "applyset-wHf5Gity0G0nPN34KuNBIBBEOu2H9ED2KqsblMPFygM-v1", as.ID())
 
-	err := aset.Add(context.Background(), configMap("test-cm", "ns1"))
+	_, err := aset.Add(context.Background(), configMap("test-cm", "ns1"))
 	assert.NoError(t, err)
-	err = aset.Add(context.Background(), configMap("test-cm", "ns2"))
+	_, err = aset.Add(context.Background(), configMap("test-cm", "ns2"))
 	assert.NoError(t, err)
 
 	dynamicClient.PrependReactor("patch", "configmaps", func(action k8stesting.Action) (handled bool, ret runtime.Object, err error) {

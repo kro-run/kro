@@ -115,14 +115,13 @@ func (a *ApplyResult) recordApplied(
 	obj ApplyableObject,
 	lastApplied *unstructured.Unstructured,
 	err error,
-) AppliedObject {
+) {
 	ao := AppliedObject{
 		ApplyableObject: obj,
 		LastApplied:     lastApplied,
 		Error:           err,
 	}
 	a.AppliedObjects = append(a.AppliedObjects, ao)
-	return ao
 }
 
 func (a *ApplyResult) recordPruned(

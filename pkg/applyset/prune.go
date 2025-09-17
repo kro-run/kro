@@ -41,7 +41,7 @@ const (
 	// This ensures we are no unbounded when pruning many GVKs.
 	// Could be parameterized later on
 	// TODO (barney-s): Possible parameterization target
-	PruneGVKParallelizationLimit = 5
+	PruneGVKParallelizationLimit = 1
 )
 
 // PruneObject is an apiserver object that should be deleted as part of prune.
@@ -124,22 +124,33 @@ func (a *applySet) findAllObjectsToPrune(
 		}
 	}
 
-	group, ctx := errgroup.WithContext(ctx)
-	group.SetLimit(PruneGVKParallelizationLimit)
-	for i := range tasks {
-		task := tasks[i]
-		group.Go(func() error {
+	if PruneGVKParallelizationLimit <= 1 {
+		for i := range tasks {
+			task := tasks[i]
 			results, err := a.findObjectsToPrune(ctx, dynamicClient, visitedUIDs, task.namespace, task.restMapping)
 			if err != nil {
-				return fmt.Errorf("listing %v objects for pruning: %w", task.restMapping.GroupVersionKind.String(), err)
+				return nil, fmt.Errorf("listing %v objects for pruning: %w", task.restMapping.GroupVersionKind.String(), err)
 			}
 			task.results = results
-			return nil
-		})
-	}
-	// Wait for all the goroutines to finish
-	if err := group.Wait(); err != nil {
-		return nil, err
+		}
+	} else {
+		group, ctx := errgroup.WithContext(ctx)
+		group.SetLimit(PruneGVKParallelizationLimit)
+		for i := range tasks {
+			task := tasks[i]
+			group.Go(func() error {
+				results, err := a.findObjectsToPrune(ctx, dynamicClient, visitedUIDs, task.namespace, task.restMapping)
+				if err != nil {
+					return fmt.Errorf("listing %v objects for pruning: %w", task.restMapping.GroupVersionKind.String(), err)
+				}
+				task.results = results
+				return nil
+			})
+		}
+		// Wait for all the goroutines to finish
+		if err := group.Wait(); err != nil {
+			return nil, err
+		}
 	}
 
 	var allObjects []PruneObject

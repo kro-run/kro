@@ -141,35 +141,6 @@ func (igr *instanceGraphReconciler) updateResourceReadiness(resourceID string) {
 	}
 }
 
-func (igr *instanceGraphReconciler) processLoad(
-	obj applyset.ApplyableObject,
-	observed *unstructured.Unstructured,
-) error {
-	if observed == nil {
-		return nil
-	}
-
-	igr.runtime.SetResource(obj.ID, observed)
-	igr.updateResourceReadiness(obj.ID)
-	// Synchronize runtime state after each resource
-	if _, err := igr.runtime.Synchronize(); err != nil {
-		return fmt.Errorf("failed to synchronize after apply/prune: %w", err)
-	}
-	return nil
-}
-
-func (igr *instanceGraphReconciler) processAfterApply(applied applyset.AppliedObject) error {
-	resourceState := igr.state.ResourceStates[applied.ID]
-	if applied.Error != nil {
-		resourceState.State = ResourceStateError
-		resourceState.Err = applied.Error
-		return nil
-	}
-
-	igr.updateResourceReadiness(applied.ID)
-	return nil
-}
-
 // reconcileInstance handles the reconciliation of an active instance
 func (igr *instanceGraphReconciler) reconcileInstance(ctx context.Context) error {
 	instance := igr.runtime.GetInstance()
@@ -185,12 +156,10 @@ func (igr *instanceGraphReconciler) reconcileInstance(ctx context.Context) error
 	}
 
 	config := applyset.Config{
-		ToolLabels:         igr.instanceSubResourcesLabeler.Labels(),
-		FieldManager:       FieldManagerForApplyset,
-		ToolingID:          KROTooling,
-		LoadCallback:       igr.processLoad,
-		AfterApplyCallback: igr.processAfterApply,
-		Log:                igr.log,
+		ToolLabels:   igr.instanceSubResourcesLabeler.Labels(),
+		FieldManager: FieldManagerForApplyset,
+		ToolingID:    KROTooling,
+		Log:          igr.log,
 	}
 
 	aset, err := applyset.New(instance, igr.restMapper, igr.client, config)
@@ -231,13 +200,32 @@ func (igr *instanceGraphReconciler) reconcileInstance(ctx context.Context) error
 			ID:           resourceID,
 			ExternalRef:  igr.runtime.ResourceDescriptor(resourceID).IsExternalRef(),
 		}
-		err = aset.Add(ctx, applyable)
+		clusterObj, err := aset.Add(ctx, applyable)
 		if err != nil {
 			return fmt.Errorf("failed to add resource to applyset: %w", err)
+		}
+
+		if clusterObj != nil {
+			igr.runtime.SetResource(resourceID, clusterObj)
+			igr.updateResourceReadiness(resourceID)
+			// Synchronize runtime state after each resource
+			if _, err := igr.runtime.Synchronize(); err != nil {
+				return fmt.Errorf("failed to synchronize after apply/prune: %w", err)
+			}
 		}
 	}
 
 	result, err := aset.Apply(ctx, prune)
+	for _, applied := range result.AppliedObjects {
+		resourceState := igr.state.ResourceStates[applied.ID]
+		if applied.Error != nil {
+			resourceState.State = ResourceStateError
+			resourceState.Err = applied.Error
+		} else {
+			igr.updateResourceReadiness(applied.ID)
+		}
+	}
+
 	if err != nil {
 		return igr.delayedRequeue(fmt.Errorf("failed to apply/prune resources: %w", err))
 	}
