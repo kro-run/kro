@@ -85,9 +85,11 @@ func wrapInstance(instance *unstructured.Unstructured) *unstructuredConditionAda
 // NewConditionsMarkerFor creates a marker to manage conditions and sub-conditions for instances.
 // ```
 // Ready
+//
 //	├─ InstanceManaged - Instance finalizers and labels are properly set
 //	├─ GraphResolved - Runtime graph created and all resources resolved
 //	└─ ResourcesReady - All resources are created and ready
+//
 // ```
 func NewConditionsMarkerFor(instance *unstructured.Unstructured) *ConditionsMarker {
 	wrapped := wrapInstance(instance)
